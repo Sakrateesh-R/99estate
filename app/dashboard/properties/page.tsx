@@ -77,7 +77,15 @@ export default async function SellerPropertiesPage() {
                   <MiniStat label="Views" value={property.views_count} />
                   <MiniStat label="Saves" value={property.saves_count} />
                   <MiniStat label="Unlocks" value={property.unlocks_count} />
-                  <MiniStat label="Leads" value={property.leads_count} />
+                  {/* The only stat with somewhere to go: the others are
+                      counts, this one is people with phone numbers. */}
+                  <MiniStat
+                    label="Enquiries"
+                    value={property.leads_count}
+                    href={
+                      property.leads_count > 0 ? `/dashboard/leads?property=${property.id}` : undefined
+                    }
+                  />
                 </dl>
               </li>
             ))}
@@ -140,7 +148,18 @@ export default async function SellerPropertiesPage() {
                     <td className="px-3 py-3 text-right tabular-nums text-ink-700">{formatCount(property.views_count)}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-ink-700">{formatCount(property.saves_count)}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-ink-700">{formatCount(property.unlocks_count)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums font-semibold text-ink-900">{formatCount(property.leads_count)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums font-semibold text-ink-900">
+                      {property.leads_count > 0 ? (
+                        <Link
+                          href={`/dashboard/leads?property=${property.id}`}
+                          className="text-brand-700 hover:underline"
+                        >
+                          {formatCount(property.leads_count)}
+                        </Link>
+                      ) : (
+                        formatCount(property.leads_count)
+                      )}
+                    </td>
 
                     <td className="px-4 py-3">
                       <PropertyActions property={property} />
@@ -170,11 +189,19 @@ function Thumb({ property, className }: { property: SellerPropertyRow; className
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: number }) {
+function MiniStat({ label, value, href }: { label: string; value: number; href?: string }) {
   return (
     <div>
       <dt className="text-[0.6875rem] text-ink-500">{label}</dt>
-      <dd className="text-sm font-semibold tabular-nums text-ink-900">{formatCount(value)}</dd>
+      <dd className="text-sm font-semibold tabular-nums text-ink-900">
+        {href ? (
+          <Link href={href} className="text-brand-700 hover:underline">
+            {formatCount(value)}
+          </Link>
+        ) : (
+          formatCount(value)
+        )}
+      </dd>
     </div>
   );
 }

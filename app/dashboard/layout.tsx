@@ -4,6 +4,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { SiteHeader } from '@/components/layout/site-header';
 import { DashboardNav } from '@/components/dashboard/dashboard-nav';
 import { requireProfile } from '@/lib/auth/session';
+import { getLeadSummary } from '@/lib/leads/queries';
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -19,6 +20,7 @@ export const metadata: Metadata = {
  */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const profile = await requireProfile();
+  const leads = await getLeadSummary();
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -40,7 +42,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           ) : null}
 
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-[14rem_minmax(0,1fr)]">
-            <DashboardNav />
+            <DashboardNav newLeads={leads.unactioned} />
             <div className="min-w-0">{children}</div>
           </div>
         </div>

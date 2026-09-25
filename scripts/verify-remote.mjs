@@ -13,6 +13,7 @@
  *   node --env-file=.env.local scripts/verify-remote.mjs
  */
 
+import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -351,6 +352,96 @@ async function main() {
 
         await admin.from('properties').delete().eq('id', declared.data.id);
       }
+    }
+
+    // --- Lead inbox (§15) ---------------------------------------------------
+    //
+    // The unlocks above already created leads. What matters here is who can
+    // read them: the view hands out the buyer's phone number, which is as
+    // sensitive as the seller contact the entire paywall exists to protect.
+    {
+      const sellerId = properties[0].seller_id;
+
+      // Seller of the unlocked listing, signed in as themselves.
+      const sellerEmail = `verify.inbox.${stamp}@99estate.dev`;
+      const sellerPassword = `Verify!${stamp}`;
+
+      // Only possible when we own the fixture seller; against real listings
+      // the owner's password is unknown, so this block adapts.
+      let sellerClient = null;
+      if (seededSellerId && sellerId === seededSellerId) {
+        await admin.auth.admin.updateUserById(seededSellerId, { password: sellerPassword });
+        sellerClient = createClient(url, anonKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { error } = await sellerClient.auth.signInWithPassword({
+          email: (await admin.auth.admin.getUserById(seededSellerId)).data.user.email,
+          password: sellerPassword,
+        });
+        if (error) sellerClient = null;
+      }
+
+      if (sellerClient) {
+        const inbox = await sellerClient
+          .from('lead_details')
+          .select('id, status, buyer_mobile, buyer_name, property_id');
+
+        check('seller sees the leads their unlocks created', (inbox.data ?? []).length >= 2,
+          `rows=${inbox.data?.length ?? 0} ${inbox.error?.message ?? ''}`);
+
+        check('lead carries the buyer mobile the seller earned',
+          typeof inbox.data?.[0]?.buyer_mobile === 'string' && inbox.data[0].buyer_mobile.length === 10,
+          String(inbox.data?.[0]?.buyer_mobile));
+
+        const leadId = inbox.data?.[0]?.id;
+
+        if (leadId) {
+          const moved = await sellerClient
+            .from('leads').update({ status: 'contacted' }).eq('id', leadId).select('status').maybeSingle();
+          check('seller can move a lead through the pipeline', moved.data?.status === 'contacted',
+            moved.error?.message ?? String(moved.data?.status));
+
+          const noted = await sellerClient
+            .from('leads').update({ notes: 'Site visit Saturday' }).eq('id', leadId).select('notes').maybeSingle();
+          check('seller can attach a private note', noted.data?.notes === 'Site visit Saturday',
+            noted.error?.message ?? String(noted.data?.notes));
+
+          /**
+           * The guard exists precisely to stop this: `lead_details` joins the
+           * buyer's profile for their mobile, so a seller able to rewrite
+           * buyer_id could read any user's phone number by pointing one of
+           * their own leads at them.
+           *
+           * The target must be an id the lead does not already hold —
+           * assigning the current buyer back to itself changes nothing, so
+           * the guard has nothing to object to and the update succeeds
+           * correctly.
+           */
+          const hijack = await sellerClient
+            .from('leads').update({ buyer_id: randomUUID() }).eq('id', leadId).select('buyer_id').maybeSingle();
+          check('seller cannot repoint a lead at another buyer', hijack.error !== null,
+            hijack.error ? hijack.error.code : 'UPDATE WAS ALLOWED');
+
+          const stolen = await sellerClient
+            .from('leads').update({ seller_id: testUserId }).eq('id', leadId).select('seller_id').maybeSingle();
+          check('seller cannot transfer a lead away', stolen.error !== null || stolen.data === null,
+            stolen.error ? stolen.error.code : 'UPDATE WAS ALLOWED');
+        }
+
+        await sellerClient.auth.signOut();
+      }
+
+      // The buyer is a party to the lead and may see it, but must never get a
+      // writable handle on the seller's pipeline.
+      const buyerView = await user.from('lead_details').select('id');
+      check('buyer does not appear in the seller inbox view', (buyerView.data ?? []).length === 0,
+        `rows=${buyerView.data?.length ?? 0}`);
+
+      const anonLeads = createClient(url, anonKey, { auth: { persistSession: false } });
+      const anonView = await anonLeads.from('lead_details').select('id');
+      check('anonymous visitors cannot read any lead', (anonView.data ?? []).length === 0,
+        `rows=${anonView.data?.length ?? 0}`);
+      void sellerEmail;
     }
 
     // --- Anonymous access ---------------------------------------------------
