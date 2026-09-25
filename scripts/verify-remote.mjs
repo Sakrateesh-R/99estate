@@ -228,6 +228,71 @@ async function main() {
       }
     }
 
+    // --- Seller declares their own type per listing -------------------------
+    //
+    // seller_type used to be derived from profiles.role by a trigger, so a
+    // seller could not say "I am the owner of this one, an agent on that one".
+    // The migration replaced the trigger with a declared column, which means
+    // two things now have to hold: the value a seller writes must survive, and
+    // it must still be constrained to the three legal values.
+    {
+      // Only the NOT NULL columns. `area_sqft` is generated from `area` and
+      // must not be written, and everything else has a default — keeping the
+      // fixture minimal means it does not break when the table grows.
+      const listing = {
+        seller_id: testUserId,
+        title: 'Verification listing',
+        property_type: 'apartment',
+        listing_type: 'sale',
+        price: 5000000,
+        city: 'Karur',
+      };
+
+      const declared = await user
+        .from('properties')
+        .insert({ ...listing, seller_type: 'agent' })
+        .select('id, seller_type')
+        .maybeSingle();
+
+      check(
+        'seller can declare a listing as agent while their own role is not',
+        declared.data?.seller_type === 'agent',
+        declared.error?.message ?? `seller_type=${declared.data?.seller_type}`,
+      );
+
+      if (declared.data?.id) {
+        // The old trigger fired on update too, so this is where a surviving
+        // one would show itself.
+        const changed = await user
+          .from('properties')
+          .update({ seller_type: 'builder' })
+          .eq('id', declared.data.id)
+          .select('seller_type')
+          .maybeSingle();
+
+        check(
+          'seller can change the declared type afterwards',
+          changed.data?.seller_type === 'builder',
+          changed.error?.message ?? `seller_type=${changed.data?.seller_type}`,
+        );
+
+        const bogus = await user
+          .from('properties')
+          .update({ seller_type: 'landlord' })
+          .eq('id', declared.data.id)
+          .select('seller_type')
+          .maybeSingle();
+
+        check(
+          'an unrecognised seller type is rejected',
+          bogus.error !== null && bogus.data?.seller_type !== 'landlord',
+          bogus.error ? bogus.error.code : `accepted seller_type=${bogus.data?.seller_type}`,
+        );
+
+        await admin.from('properties').delete().eq('id', declared.data.id);
+      }
+    }
+
     // --- Anonymous access ---------------------------------------------------
     const anon = createClient(url, anonKey, { auth: { persistSession: false } });
     const anonProps = await anon.from('properties').select('id').eq('status', 'published').limit(5);
