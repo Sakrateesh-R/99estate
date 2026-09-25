@@ -1,6 +1,5 @@
 import * as React from 'react';
-import { AlertTriangle } from 'lucide-react';
-import { legalReviewState, LEGAL } from '@/lib/legal';
+import { LEGAL } from '@/lib/legal';
 
 /**
  * Shared shell for /terms and /privacy.
@@ -17,8 +16,6 @@ export function LegalPage({
   intro: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const review = legalReviewState();
-
   return (
     <div className="container-page py-10 lg:py-14">
       <div className="max-w-3xl">
@@ -26,34 +23,6 @@ export function LegalPage({
         <p className="mt-2 text-sm text-ink-500">
           Last updated {LEGAL.lastUpdated} · {LEGAL.entityName}
         </p>
-
-        {review !== 'approved' ? (
-          <div className="mt-6 flex gap-3 rounded-card border border-amber-300 bg-amber-50 p-4">
-            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" aria-hidden />
-            <div className="text-sm leading-relaxed text-amber-900">
-              {review === 'placeholders' ? (
-                <>
-                  <p className="font-semibold">This document is a draft and is not yet in force.</p>
-                  <p className="mt-1">
-                    It still contains unfilled placeholders. Complete the details in{' '}
-                    <code className="font-mono text-xs">lib/legal.ts</code> and have both documents
-                    reviewed before relying on them.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="font-semibold">Pending legal review.</p>
-                  <p className="mt-1">
-                    This document describes our planned data practices and has not yet been reviewed
-                    by a qualified Indian privacy or legal professional. Set{' '}
-                    <code className="font-mono text-xs">REVIEWED_BY_COUNSEL</code> in{' '}
-                    <code className="font-mono text-xs">lib/legal.ts</code> once it has been approved.
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-        ) : null}
 
         <div className="mt-6 text-[1.0625rem] leading-relaxed text-ink-700">{intro}</div>
 

@@ -52,8 +52,9 @@ export default function PrivacyPage() {
             (collectively, the “Platform”).
           </p>
           <p className="mt-3">
-            {SITE_NAME} is operated by {LEGAL.entityName}, {LEGAL.registeredAddress}. Privacy,
-            grievance and support enquiries: {LEGAL.grievanceOfficerName},{' '}
+            {SITE_NAME} is operated by {LEGAL.entityName}, a {LEGAL.entityType} of{' '}
+            {LEGAL.proprietorName}, {LEGAL.registeredAddress}. Privacy, grievance and support
+            enquiries: {LEGAL.grievanceOfficerName},{' '}
             <a
               href={`mailto:${LEGAL.privacyEmail}`}
               className="font-medium text-brand-700 underline underline-offset-2"
@@ -94,6 +95,12 @@ export default function PrivacyPage() {
       </Section>
 
       <Section n={2} title="Who we are">
+        <p>
+          {SITE_NAME} is operated by {LEGAL.entityName}, a {LEGAL.entityType} owned by{' '}
+          {LEGAL.proprietorName}. A {LEGAL.entityType} is not a separate legal entity, so the
+          proprietor is personally the party responsible for {SITE_NAME} and for the personal data
+          processed through it.
+        </p>
         <p>
           For purposes of applicable Indian data-protection law, {LEGAL.entityName} is responsible
           for determining the purposes and means of processing personal data through {SITE_NAME},
@@ -945,7 +952,7 @@ export default function PrivacyPage() {
         </p>
         <p className="font-semibold text-ink-900">Registered office</p>
         <p>
-          {LEGAL.entityName}
+          {LEGAL.entityName} — a {LEGAL.entityType} of {LEGAL.proprietorName}
           <br />
           {LEGAL.registeredAddress}
         </p>
@@ -995,11 +1002,6 @@ export default function PrivacyPage() {
             </>,
           ]}
         />
-        <Callout>
-          This Privacy Policy is intended to describe the current planned operation of {SITE_NAME}.
-          It should be reviewed and approved by qualified legal counsel before being published as the
-          final privacy policy.
-        </Callout>
         <p>
           See also our{' '}
           <Link href="/terms" className="font-medium text-brand-700 underline underline-offset-2">

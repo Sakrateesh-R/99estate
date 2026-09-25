@@ -129,6 +129,30 @@ export async function createUnlockOrder(propertyId: string): Promise<CreateOrder
     // the dialog should not litter the gateway with abandoned orders.
     let providerOrderId = result.provider_order_id ?? null;
 
+    /**
+     * A stored order outlives the API key that created it.
+     *
+     * When keys are rotated or expire, the stale order still sits on the
+     * payment row and this function happily hands it to Checkout without ever
+     * calling the gateway — so the failure only appears as a 401 inside
+     * Razorpay's iframe, where neither the buyer nor our logs can see it.
+     * Confirm the order is still ours before reopening it.
+     */
+    if (providerOrderId) {
+      try {
+        await provider.fetchStatus(providerOrderId);
+      } catch (cause) {
+        const status = cause instanceof PaymentProviderError ? cause.status : undefined;
+        // Bad credentials are an operator problem, not a buyer one, and
+        // minting a fresh order would fail identically.
+        if (status === 401) throw cause;
+        // Any other rejection means this key does not recognise the order.
+        // Drop it and open a new one below.
+        console.warn('[payments] discarding unusable order %s:', providerOrderId, cause);
+        providerOrderId = null;
+      }
+    }
+
     if (!providerOrderId) {
       const order = await provider.createOrder({
         amount,
@@ -177,6 +201,18 @@ export async function createUnlockOrder(propertyId: string): Promise<CreateOrder
       callbackUrl: `${getSiteUrl()}/api/webhooks/${provider.name}`,
     };
   } catch (cause) {
+    // A rejected credential is ours to fix, and the gateway's wording for it
+    // ("the api key provided by you has expired") would only confuse a buyer
+    // into thinking they did something wrong. Log the real reason, show a
+    // truthful one.
+    if (cause instanceof PaymentProviderError && cause.status === 401) {
+      console.error('[payments] gateway rejected our credentials:', cause.message);
+      return {
+        status: 'error',
+        message: 'Payments are temporarily unavailable. Nothing has been charged.',
+      };
+    }
+
     const message =
       cause instanceof PaymentProviderError
         ? cause.message

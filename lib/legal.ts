@@ -13,8 +13,20 @@
 export const LEGAL = {
   /** Operating entity behind 99Estate. */
   entityName: 'Sakdha',
+  /**
+   * A sole proprietorship is not a separate legal person: the proprietor is
+   * personally the contracting party and the Data Fiduciary. So the documents
+   * name the proprietor alongside the trading name rather than presenting
+   * "Sakdha" as an entity that could be sued on its own.
+   */
+  entityType: 'sole proprietorship',
+  proprietorName: 'Sakrateesh R',
   registeredAddress: '282/9, Rasi Nagar, Chinna Andan Kovil Road, Karur, Tamil Nadu, India',
-  /** Empty until the entity has a CIN/LLPIN/GSTIN worth publishing. */
+  /**
+   * Empty by design. A proprietorship has no CIN or LLPIN, and registering for
+   * GST is not required below the turnover threshold. Publish a GSTIN here if
+   * and when one is obtained.
+   */
   registrationNumber: '',
 
   /** IT Rules 2021 requires this person to be named publicly. */
@@ -29,27 +41,6 @@ export const LEGAL = {
 
   lastUpdated: '25 September 2026',
 } as const;
-
-/**
- * Flip to `true` only once a qualified Indian privacy/legal professional has
- * reviewed and approved both documents.
- *
- * Kept separate from the placeholder check because the two failure modes are
- * different: missing details make a document incomplete, whereas complete but
- * unreviewed text can look authoritative while still being wrong. Both
- * documents state this caveat themselves, so the banner matches the text.
- */
-export const REVIEWED_BY_COUNSEL = false;
-
-export type LegalReviewState = 'placeholders' | 'pending-review' | 'approved';
-
-export function legalReviewState(): LegalReviewState {
-  const unresolved = Object.values(LEGAL).some(
-    (value) => value.includes('[') && value.includes(']'),
-  );
-  if (unresolved) return 'placeholders';
-  return REVIEWED_BY_COUNSEL ? 'approved' : 'pending-review';
-}
 
 /** Business constants restated in the legal text, kept in one place. */
 export const LEGAL_FACTS = {

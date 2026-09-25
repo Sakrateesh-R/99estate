@@ -19,7 +19,8 @@ export default function TermsPage() {
       intro={
         <p>
           These terms govern your use of {SITE_NAME} (&ldquo;the Platform&rdquo;), operated by{' '}
-          {LEGAL.entityName}. By creating an account, posting a listing, or unlocking a
+          {LEGAL.entityName}, a {LEGAL.entityType} of {LEGAL.proprietorName},{' '}
+          {LEGAL.registeredAddress}. By creating an account, posting a listing, or unlocking a
           seller&rsquo;s contact, you agree to them. If you do not agree, please do not use the
           Platform.
         </p>
@@ -244,7 +245,7 @@ export default function TermsPage() {
           <p>
             <strong className="font-semibold">{LEGAL.grievanceOfficerName}</strong>
             <br />
-            {LEGAL.entityName}
+            {LEGAL.entityName} — a {LEGAL.entityType} of {LEGAL.proprietorName}
             <br />
             {LEGAL.registeredAddress}
             <br />
