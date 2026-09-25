@@ -58,7 +58,21 @@ export async function createUnlockOrder(propertyId: string): Promise<CreateOrder
   if (!user) return { status: 'sign_in_required' };
 
   const supabase = await createClient();
-  const provider = getPaymentProvider();
+
+  // Constructing the provider throws when the gateway is misconfigured — keys
+  // missing, or PAYMENT_PROVIDER left as `mock` in production. Unguarded, that
+  // surfaces to the buyer as a bare 500 with nothing to act on, and nothing in
+  // the UI to distinguish it from a failed payment.
+  let provider;
+  try {
+    provider = getPaymentProvider();
+  } catch (cause) {
+    console.error('[payments] provider unavailable:', cause);
+    return {
+      status: 'error',
+      message: 'Payments are temporarily unavailable. Nothing has been charged.',
+    };
+  }
 
   const { data, error } = await supabase.rpc('create_contact_unlock_order', {
     p_property_id: propertyId,
@@ -221,7 +235,16 @@ export async function verifyUnlockPayment(
     return { status: 'pending', message: 'The payment has not started yet.' };
   }
 
-  const provider = getPaymentProvider();
+  let provider;
+  try {
+    provider = getPaymentProvider();
+  } catch (cause) {
+    console.error('[payments] provider unavailable:', cause);
+    return {
+      status: 'error',
+      message: 'Payments are temporarily unavailable. If you were charged, it will be settled shortly.',
+    };
+  }
 
   /**
    * Gate one: if Checkout handed back a signed payload, it must verify.

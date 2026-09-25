@@ -111,11 +111,30 @@ export async function POST(request: NextRequest) {
  * against an endpoint with no secret silently rejects every event.
  */
 export async function GET() {
-  let configured = false;
   try {
-    configured = Boolean(getPaymentProvider());
-  } catch {
-    configured = false;
+    const provider = getPaymentProvider();
+    return NextResponse.json({
+      ok: true,
+      endpoint: 'razorpay webhook',
+      configured: true,
+      provider: provider.name,
+      // A webhook secret is required for the push path. Without it every
+      // event is rejected, and a buyer who closes the tab mid-payment is
+      // charged with nothing delivered.
+      webhookSecretSet: Boolean(process.env.PAYMENT_WEBHOOK_SECRET),
+    });
+  } catch (cause) {
+    // Reports the shape of the misconfiguration, never a credential — this is
+    // a public endpoint. Without a reason here, a gateway outage is
+    // indistinguishable from a typo in an environment variable.
+    return NextResponse.json(
+      {
+        ok: true,
+        endpoint: 'razorpay webhook',
+        configured: false,
+        reason: cause instanceof Error ? cause.message : 'payment provider unavailable',
+      },
+      { status: 200 },
+    );
   }
-  return NextResponse.json({ ok: true, endpoint: 'razorpay webhook', configured });
 }
