@@ -17,7 +17,8 @@
     "db:types": "supabase gen types typescript --local > types/database.types.ts",
     "db:verify": "supabase db reset && docker exec -i supabase_db_99estate psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q < supabase/tests/business_rules.sql",
     "db:seed:remote": "node --env-file=.env.local scripts/seed-remote.mjs",
-    "db:verify:remote": "node --env-file=.env.local scripts/verify-remote.mjs"
+    "db:verify:remote": "node --env-file=.env.local scripts/verify-remote.mjs",
+    "gen:logo": "node scripts/generate-logo.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",

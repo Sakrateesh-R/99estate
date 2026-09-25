@@ -30,7 +30,19 @@ import {
   getLatestProperties,
   getPopularLocations,
 } from '@/lib/properties/queries';
-import { FREE_DAILY_UNLOCKS, PAID_UNLOCK_PRICE } from '@/lib/constants';
+import { FREE_DAILY_UNLOCKS, PAID_UNLOCK_PRICE, SITE_NAME } from '@/lib/constants';
+import type { Metadata } from 'next';
+
+/**
+ * Without an explicit canonical the home page is reachable, and indexable, at
+ * more than one address — with a trailing slash, with tracking parameters on
+ * a shared link. Naming one address consolidates those into a single entry.
+ */
+export const metadata: Metadata = {
+  title: `${SITE_NAME} — Property for sale, rent and PG across India`,
+  description: `Browse verified property listings free on ${SITE_NAME}. Full details, photos and location at no cost — ${FREE_DAILY_UNLOCKS} seller contacts free every day, ₹${PAID_UNLOCK_PRICE} after that. Posting is always free.`,
+  alternates: { canonical: '/' },
+};
 
 /**
  * Home page (§21).

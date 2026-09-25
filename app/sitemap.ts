@@ -2,9 +2,14 @@ import type { MetadataRoute } from 'next';
 import { createClient } from '@/lib/supabase/server';
 import { getSiteUrl } from '@/lib/env';
 import { propertyPath } from '@/lib/utils';
+import { landingPath, landingTypeGroups } from '@/lib/seo/landing';
+import { landingPlaces } from '@/lib/seo/places';
+import type { Enums } from '@/types/database.types';
 
 /** Sitemaps cap at 50,000 URLs; stay well inside it. */
 const MAX_PROPERTY_URLS = 20_000;
+
+const LISTING_TYPES: Enums<'listing_type'>[] = ['sale', 'rent', 'pg'];
 
 export const revalidate = 3600;
 
@@ -13,6 +18,11 @@ export const revalidate = 3600;
  *
  * Only published, unexpired listings are included: pointing a crawler at a
  * paused or expired listing wastes crawl budget and earns a soft 404.
+ *
+ * The city and intent URLs here are the landing pages, not `?city=` query
+ * strings. Those were the same content behind a URL shape that does not rank,
+ * and advertising both would have split the signal across two addresses for
+ * every city we cover.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = getSiteUrl();
@@ -20,9 +30,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = [
     { url: `${base}/`, changeFrequency: 'daily', priority: 1 },
     { url: `${base}/properties`, changeFrequency: 'hourly', priority: 0.9 },
-    { url: `${base}/properties?listing=sale`, changeFrequency: 'hourly', priority: 0.8 },
-    { url: `${base}/properties?listing=rent`, changeFrequency: 'hourly', priority: 0.8 },
-    { url: `${base}/properties?listing=pg`, changeFrequency: 'daily', priority: 0.6 },
     { url: `${base}/how-it-works`, changeFrequency: 'monthly', priority: 0.6 },
     { url: `${base}/pricing`, changeFrequency: 'monthly', priority: 0.6 },
     { url: `${base}/about`, changeFrequency: 'yearly', priority: 0.4 },
@@ -34,7 +41,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const supabase = await createClient();
 
-    const [{ data: properties }, { data: cities }] = await Promise.all([
+    // The same index the landing routes resolve against, so the sitemap can
+    // never advertise a URL that 404s — the two would otherwise drift apart
+    // the moment a seller used a locality nobody had added to the catalog.
+    const [{ data: properties }, places] = await Promise.all([
       supabase
         .from('properties')
         .select('id, slug, updated_at, published_at')
@@ -42,14 +52,42 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
         .order('published_at', { ascending: false, nullsFirst: false })
         .limit(MAX_PROPERTY_URLS),
-      supabase.from('locations').select('city').is('locality', null).eq('is_active', true).limit(500),
+      landingPlaces(),
     ]);
 
-    const cityEntries: MetadataRoute.Sitemap = (cities ?? []).map((c) => ({
-      url: `${base}/properties?city=${encodeURIComponent(c.city)}`,
-      changeFrequency: 'daily',
-      priority: 0.7,
-    }));
+    const cityRows = places.filter((p) => p.locality === null);
+    const localityRows = places.filter((p) => p.locality !== null);
+
+    const cityEntries: MetadataRoute.Sitemap = cityRows.flatMap((c) =>
+      LISTING_TYPES.flatMap((listing) => [
+        {
+          url: `${base}${landingPath({ city: c.city, listing })}`,
+          changeFrequency: 'daily' as const,
+          // The broad city page is the strongest of the set and should be
+          // crawled ahead of the type splits beneath it.
+          priority: 0.8,
+        },
+        // PG has no property-type breakdown worth publishing.
+        ...(listing === 'pg'
+          ? []
+          : landingTypeGroups().map((group) => ({
+              url: `${base}${landingPath({ city: c.city, listing, typeSlug: group.slug })}`,
+              changeFrequency: 'daily' as const,
+              priority: 0.6,
+            }))),
+      ]),
+    );
+
+    // Localities only get the broad intents. Multiplying them by property type
+    // produces mostly-empty pages, and an empty page in a sitemap spends crawl
+    // budget to find nothing.
+    const localityEntries: MetadataRoute.Sitemap = localityRows.flatMap((l) =>
+      LISTING_TYPES.map((listing) => ({
+        url: `${base}${landingPath({ city: l.city, locality: l.locality, listing })}`,
+        changeFrequency: 'daily' as const,
+        priority: 0.6,
+      })),
+    );
 
     const propertyEntries: MetadataRoute.Sitemap = (properties ?? []).map((p) => ({
       url: `${base}${propertyPath(p)}`,
@@ -58,7 +96,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     }));
 
-    return [...staticEntries, ...cityEntries, ...propertyEntries];
+    return [...staticEntries, ...cityEntries, ...localityEntries, ...propertyEntries];
   } catch {
     // A database hiccup should degrade the sitemap, not break the route.
     return staticEntries;

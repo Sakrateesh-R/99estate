@@ -11,11 +11,13 @@ import { ButtonLink } from '@/components/ui/button';
 import { Pagination } from '@/components/ui/pagination';
 import { getActiveCities, getCardMeta } from '@/lib/properties/queries';
 import {
+  activeFilterCount,
   buildSearchParams,
   parseFilters,
   type PropertyFilters,
   type SearchParamsInput,
 } from '@/lib/properties/filters';
+import { landingPath } from '@/lib/seo/landing';
 import { searchProperties } from '@/lib/properties/search';
 import { LISTING_TYPE_LABELS, PROPERTY_TYPE_LABELS, PAGE_SIZE } from '@/lib/constants';
 
@@ -33,13 +35,35 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
   const mode = filters.listing ? ` ${LISTING_TYPE_LABELS[filters.listing].toLowerCase()}` : '';
   const where = filters.city ? ` in ${filters.city}` : ' across India';
 
+  /**
+   * A city search has a landing page that says the same thing at a URL built
+   * to rank, so this points there rather than competing with it. Without that
+   * the two addresses split the signal for every city we cover.
+   *
+   * Only the plain city (+ intent) case maps cleanly — once a budget or a BHK
+   * filter is applied there is no landing page for it, and the unfiltered
+   * search is the honest canonical.
+   */
+  const mapsToLanding =
+    Boolean(filters.city) &&
+    !filters.q &&
+    !filters.locality &&
+    filters.types.length === 0 &&
+    activeFilterCount(filters) === (filters.listing ? 2 : 1);
+
+  const canonical = mapsToLanding
+    ? landingPath({ city: filters.city, listing: filters.listing ?? 'sale' })
+    : '/properties';
+
+  // Page one of the unfiltered list is the only version of this route worth
+  // indexing; every filter permutation is a near-duplicate of it.
   const isCanonical = filters.page === 1 && !filters.q && !filters.locality;
 
   return {
     title: `${what}${mode ? ` to ${mode.trim()}` : ''}${where}`,
     description: `Browse ${what.toLowerCase()}${where} on 99Estate. Full details free, 2 seller contacts free every day, ₹9 after that.`,
-    alternates: { canonical: `/properties${filters.city ? `?city=${encodeURIComponent(filters.city)}` : ''}` },
-    robots: isCanonical ? undefined : { index: false, follow: true },
+    alternates: { canonical },
+    robots: isCanonical && !mapsToLanding ? undefined : { index: false, follow: true },
   };
 }
 

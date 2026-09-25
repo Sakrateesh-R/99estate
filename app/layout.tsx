@@ -38,6 +38,17 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, 'max-image-preview': 'large' },
   },
+  /**
+   * Google Search Console ownership proof. Emitted as
+   * `<meta name="google-site-verification">` in the head of every page.
+   *
+   * It lives in the root layout rather than only on the home page because
+   * Search Console re-checks it periodically and will revoke access if it
+   * disappears — and a token that only exists on one route is one refactor
+   * away from vanishing. It is a public token, not a secret: it proves
+   * ownership to Google and grants nothing to anyone who reads it.
+   */
+  verification: { google: 'uHnBw4jiUcvhMGouNpEGYzYw-IyZPzZhT_GQR7cmp6s' },
   formatDetection: { telephone: false },
 };
 

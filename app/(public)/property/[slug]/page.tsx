@@ -41,6 +41,8 @@ import {
   SITE_NAME,
 } from '@/lib/constants';
 import { getSiteUrl } from '@/lib/env';
+import { landingPath } from '@/lib/seo/landing';
+import { JsonLd, breadcrumbJsonLd } from '@/lib/seo/json-ld';
 
 type PageProps = { params: Promise<{ slug: string }> };
 
@@ -116,6 +118,29 @@ export default async function PropertyDetailPage({ params }: PageProps) {
   after(() => recordPropertyView(property.id));
 
   const canonicalPath = propertyPath(property);
+
+  const breadcrumbs = [
+    { name: 'Home', path: '/' },
+    { name: 'Properties', path: '/properties' },
+    {
+      name: property.city,
+      path: landingPath({ city: property.city, listing: property.listing_type }),
+    },
+    ...(property.locality
+      ? [
+          {
+            name: property.locality,
+            path: landingPath({
+              city: property.city,
+              locality: property.locality,
+              listing: property.listing_type,
+            }),
+          },
+        ]
+      : []),
+    { name: PROPERTY_TYPE_LABELS[property.property_type], path: canonicalPath },
+  ];
+
   const location = [property.locality, property.city, property.state].filter(Boolean).join(', ');
   const area = formatArea(property.area, property.area_unit);
 
@@ -151,24 +176,35 @@ export default async function PropertyDetailPage({ params }: PageProps) {
         // Structured data for rich results (§23). Deliberately free of any
         // seller contact information.
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(buildListingJsonLd({ property, images, canonicalPath })),
+          __html: JSON.stringify(buildListingJsonLd({ property, images, canonicalPath })).replace(
+            /</g,
+            '\\u003c',
+          ),
         }}
       />
+      {/* Same trail as the visible breadcrumb above — Google treats a
+          mismatch between the two as misleading markup. */}
+      <JsonLd data={breadcrumbJsonLd(breadcrumbs)} />
 
       <div className="container-page py-5 lg:py-8">
+        {/*
+          The city crumb points at the landing page rather than a filtered
+          search. Every listing linking to it is what gives that page its
+          internal authority, and it is the page we want ranking for the city.
+        */}
         <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1 text-sm text-ink-500">
-          <Link href="/" className="hover:text-ink-900">Home</Link>
-          <ChevronRight className="size-3.5" aria-hidden />
-          <Link href="/properties" className="hover:text-ink-900">Properties</Link>
-          <ChevronRight className="size-3.5" aria-hidden />
-          <Link
-            href={`/properties?city=${encodeURIComponent(property.city)}`}
-            className="hover:text-ink-900"
-          >
-            {property.city}
-          </Link>
-          <ChevronRight className="size-3.5" aria-hidden />
-          <span className="truncate text-ink-700">{PROPERTY_TYPE_LABELS[property.property_type]}</span>
+          {breadcrumbs.map((crumb, index) => (
+            <span key={crumb.path} className="flex items-center gap-1">
+              {index > 0 ? <ChevronRight className="size-3.5" aria-hidden /> : null}
+              {index === breadcrumbs.length - 1 ? (
+                <span className="truncate text-ink-700">{crumb.name}</span>
+              ) : (
+                <Link href={crumb.path} className="hover:text-ink-900">
+                  {crumb.name}
+                </Link>
+              )}
+            </span>
+          ))}
         </nav>
 
         <div className="mt-5 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
