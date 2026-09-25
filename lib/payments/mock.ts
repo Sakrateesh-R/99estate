@@ -22,6 +22,10 @@ export function createMockProvider(): PaymentProvider {
     name: 'mock',
     publicKey: null,
 
+    async checkCredentials() {
+      return { valid: true as const, mode: 'mock' as const };
+    },
+
     async createOrder({ amount, currency }) {
       return { providerOrderId: `mock_order_${randomUUID()}`, amount, currency };
     },

@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
   PaymentProviderError,
   type CreatedOrder,
+  type CredentialCheck,
   type PaymentProvider,
   type PaymentStatus,
   type WebhookEvent,
@@ -95,6 +96,28 @@ export function createRazorpayProvider(config: {
         amount: toRupees(order.amount),
         currency: order.currency,
       } satisfies CreatedOrder;
+    },
+
+    async checkCredentials(): Promise<CredentialCheck> {
+      // Razorpay stamps the mode into the key itself, so this needs no call.
+      const mode = config.keyId.startsWith('rzp_live_')
+        ? 'live'
+        : config.keyId.startsWith('rzp_test_')
+          ? 'test'
+          : 'unknown';
+
+      try {
+        // Cheapest authenticated read there is: one record, discarded. Chosen
+        // because it proves the key pair without creating anything.
+        await call('/payments?count=1');
+        return { valid: true, mode };
+      } catch (cause) {
+        return {
+          valid: false,
+          mode,
+          reason: cause instanceof Error ? cause.message : 'unknown error',
+        };
+      }
     },
 
     async fetchStatus(providerOrderId) {

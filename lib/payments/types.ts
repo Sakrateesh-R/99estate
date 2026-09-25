@@ -33,6 +33,19 @@ export type PaymentStatus = {
   statusLabel: string;
 };
 
+export type CredentialCheck = {
+  /** The gateway accepted our key pair on a live call. */
+  valid: boolean;
+  /**
+   * Which set of books the key belongs to — `test` money is not real money.
+   * Worth surfacing: a live deployment left on test keys takes no payment,
+   * and test keys against a live webhook secret reject every event.
+   */
+  mode: 'test' | 'live' | 'mock' | 'unknown';
+  /** Gateway's own wording when the key was refused. */
+  reason?: string;
+};
+
 export type WebhookEvent = {
   /** True only for events that mean "money has settled". */
   paid: boolean;
@@ -60,6 +73,17 @@ export interface PaymentProvider {
   }): Promise<CreatedOrder>;
 
   fetchStatus(providerOrderId: string): Promise<PaymentStatus>;
+
+  /**
+   * Asks the gateway whether our credentials still work.
+   *
+   * Holding a key is not the same as holding a working key: a rotated or
+   * expired one stays in the environment looking perfectly configured, and
+   * the first symptom is a buyer staring at a checkout dialog that refuses
+   * every request. This turns that into something checkable before anyone
+   * tries to pay.
+   */
+  checkCredentials(): Promise<CredentialCheck>;
 
   /**
    * Validates the signed payload Checkout hands back on success.

@@ -105,22 +105,51 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * Cached so this endpoint cannot be used to burn our gateway rate limit.
+ *
+ * Short enough that a key rotation shows up almost immediately, long enough
+ * that repeated polling costs one upstream call per minute.
+ */
+let credentialCache: { at: number; result: Awaited<ReturnType<typeof probe>> } | null = null;
+const CREDENTIAL_TTL_MS = 60_000;
+
+async function probe() {
+  return getPaymentProvider().checkCredentials();
+}
+
+/**
  * Razorpay pings the URL when you save it in the dashboard.
  *
- * Reports whether the secret is actually configured, because a webhook saved
- * against an endpoint with no secret silently rejects every event.
+ * Doubles as the configuration health check. It reports three separate
+ * things, because each fails independently and silently:
+ *
+ *   configured        the variables exist at all
+ *   credentialsValid  the gateway still accepts them — an expired or rotated
+ *                     key looks identical to a good one from inside the app
+ *   webhookSecretSet  the push path can verify events; without it every
+ *                     event is rejected and a buyer who closes the tab
+ *                     mid-payment is charged with nothing delivered
  */
 export async function GET() {
   try {
     const provider = getPaymentProvider();
+
+    const now = Date.now();
+    if (!credentialCache || now - credentialCache.at > CREDENTIAL_TTL_MS) {
+      credentialCache = { at: now, result: await probe() };
+    }
+    const credentials = credentialCache.result;
+
     return NextResponse.json({
       ok: true,
       endpoint: 'razorpay webhook',
       configured: true,
       provider: provider.name,
-      // A webhook secret is required for the push path. Without it every
-      // event is rejected, and a buyer who closes the tab mid-payment is
-      // charged with nothing delivered.
+      credentialsValid: credentials.valid,
+      // `test` keys take no real money. Surfaced so a live site left on test
+      // credentials is visible without attempting a payment.
+      mode: credentials.mode,
+      ...(credentials.valid ? {} : { credentialsReason: credentials.reason }),
       webhookSecretSet: Boolean(process.env.PAYMENT_WEBHOOK_SECRET),
     });
   } catch (cause) {
