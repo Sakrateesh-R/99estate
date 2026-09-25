@@ -45,19 +45,79 @@ async function main() {
   console.log(`\nVerifying ${url}\n`);
 
   // --- Fixtures ------------------------------------------------------------
-  const { data: properties, error: propError } = await admin
-    .from('properties')
-    .select('id, title, seller_id, price')
-    .eq('status', 'published')
-    .order('price')
-    .limit(4);
+  const stamp = process.hrtime.bigint().toString(36);
 
-  if (propError) throw new Error(`fetch properties: ${propError.message}`);
-  if (!properties || properties.length < 3) {
-    throw new Error(`need at least 3 published listings to test the quota, found ${properties?.length ?? 0}`);
+  /**
+   * The quota rules need three listings to exercise: two free unlocks and a
+   * third that must be paid for.
+   *
+   * These used to come from whatever happened to be published, which made the
+   * suite silently dependent on seed data — and it stopped running the moment
+   * the demo listings were deleted from the live project. It now supplies its
+   * own when the project is empty, so a production database with no inventory
+   * yet is a perfectly good thing to verify against.
+   *
+   * Real listings are preferred when they exist: exercising the rules against
+   * genuine rows is a stronger check than against rows shaped to pass.
+   */
+  let seededSellerId = null;
+  const seededPropertyIds = [];
+
+  async function loadProperties() {
+    const { data, error } = await admin
+      .from('properties')
+      .select('id, title, seller_id, price')
+      .eq('status', 'published')
+      .order('price')
+      .limit(4);
+    if (error) throw new Error(`fetch properties: ${error.message}`);
+    return data ?? [];
   }
 
-  const stamp = process.hrtime.bigint().toString(36);
+  let properties = await loadProperties();
+
+  if (properties.length < 3) {
+    const sellerEmail = `verify.seller.${stamp}@99estate.dev`;
+    const { data: seller, error: sellerError } = await admin.auth.admin.createUser({
+      email: sellerEmail,
+      password: `Verify!${stamp}`,
+      email_confirm: true,
+      user_metadata: { full_name: 'Verification Seller' },
+    });
+    if (sellerError) throw new Error(`create fixture seller: ${sellerError.message}`);
+    seededSellerId = seller.user.id;
+
+    // A seller must be reachable before their contact can be unlocked.
+    await admin.from('profiles').update({ mobile_number: '9000000198' }).eq('id', seededSellerId);
+
+    // Service role bypasses the lifecycle guard, so these can be published
+    // outright rather than walked through the draft → pending → live flow.
+    const { data: made, error: makeError } = await admin
+      .from('properties')
+      .insert(
+        [1, 2, 3].map((n) => ({
+          seller_id: seededSellerId,
+          title: `Verification listing ${n}`,
+          property_type: 'apartment',
+          listing_type: 'sale',
+          price: 1000000 * n,
+          city: 'Karur',
+          status: 'published',
+          published_at: new Date().toISOString(),
+        })),
+      )
+      .select('id, title, seller_id, price');
+
+    if (makeError) throw new Error(`create fixture listings: ${makeError.message}`);
+    seededPropertyIds.push(...(made ?? []).map((p) => p.id));
+
+    properties = await loadProperties();
+    console.log(`  (seeded ${seededPropertyIds.length} temporary listings — project had none)\n`);
+  }
+
+  if (properties.length < 3) {
+    throw new Error(`need at least 3 published listings, found ${properties.length}`);
+  }
   const email = `verify.${stamp}@99estate.dev`;
   const password = `Verify!${stamp}`;
 
@@ -311,7 +371,16 @@ async function main() {
   } finally {
     // Cascades the test user's unlocks and leads away with them.
     await admin.auth.admin.deleteUser(testUserId);
-    console.log('\n  (cleaned up the throwaway verification account)');
+
+    // Deleting the fixture seller cascades its listings, and with them the
+    // unlocks and leads pointing at those listings. Runs even when an
+    // assertion threw — a failed run must not leave fake inventory behind on
+    // a live project.
+    if (seededSellerId) await admin.auth.admin.deleteUser(seededSellerId);
+
+    console.log(
+      `\n  (cleaned up the throwaway verification account${seededSellerId ? ' and its fixture listings' : ''})`,
+    );
   }
 
   console.log(`\n${passed} passed, ${failures.length} failed\n`);
