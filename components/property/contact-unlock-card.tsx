@@ -113,9 +113,11 @@ export function ContactUnlockCard({
     try {
       // The dev mock has no public key and no dialog — go straight to
       // verification so the flow is testable without gateway credentials.
+      let signed: Parameters<typeof verifyUnlockPayment>[1];
+
       if (order.publicKey) {
         setPayingLabel('Waiting for payment…');
-        await openRazorpayCheckout({
+        const result = await openRazorpayCheckout({
           keyId: order.publicKey,
           orderId: order.providerOrderId,
           amountInRupees: order.amount,
@@ -127,10 +129,27 @@ export function ContactUnlockCard({
             contact: order.buyerMobile,
           },
         });
+
+        if (result.outcome === 'failed') {
+          toast({ tone: 'error', title: 'Payment failed', description: result.reason });
+          return;
+        }
+
+        if (result.outcome === 'completed') {
+          // Pass the signed payload through; the server verifies it before
+          // settling anything.
+          signed = {
+            providerOrderId: result.providerOrderId,
+            providerPaymentId: result.providerPaymentId,
+            signature: result.signature,
+          };
+        }
+        // 'dismissed' falls through deliberately — UPI can settle after the
+        // dialog closes, so we still ask the server.
       }
 
       setPayingLabel('Confirming payment…');
-      const verified = await verifyUnlockPayment(order.paymentId);
+      const verified = await verifyUnlockPayment(order.paymentId, signed);
 
       switch (verified.status) {
         case 'unlocked':

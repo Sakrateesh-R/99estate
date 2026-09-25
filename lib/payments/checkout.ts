@@ -33,9 +33,18 @@ type RazorpayOptions = {
   modal?: { ondismiss?: () => void; confirm_close?: boolean };
 };
 
+type RazorpayFailure = { error?: { description?: string; reason?: string; code?: string } };
+
+type RazorpayInstance = {
+  open: () => void;
+  close: () => void;
+  /** Older Checkout builds omit `on`, hence the optional call at the usage site. */
+  on?: (event: 'payment.failed', handler: (event: RazorpayFailure) => void) => void;
+};
+
 declare global {
   interface Window {
-    Razorpay?: new (options: RazorpayOptions) => { open: () => void; close: () => void };
+    Razorpay?: new (options: RazorpayOptions) => RazorpayInstance;
   }
 }
 
@@ -68,15 +77,28 @@ function loadScript(): Promise<void> {
   return loader;
 }
 
-export type CheckoutOutcome = 'completed' | 'dismissed';
+export type CheckoutResult =
+  /**
+   * Checkout reported success and handed back a signed payload. The signature
+   * is verified server-side before anything is settled — `completed` here
+   * means "the dialog closed happily", not "the payment is confirmed".
+   */
+  | {
+      outcome: 'completed';
+      providerOrderId: string;
+      providerPaymentId: string;
+      signature: string;
+    }
+  /** Buyer closed the dialog. Still worth re-checking — UPI can settle late. */
+  | { outcome: 'dismissed' }
+  /** Razorpay reported a failed attempt (declined card, expired VPA, …). */
+  | { outcome: 'failed'; reason: string };
 
 /**
  * Opens the gateway dialog and resolves once it closes.
  *
- * `completed` means the dialog reported success — NOT that the payment is
- * verified. The caller must still ask the server. `dismissed` means the buyer
- * closed it, which is also worth re-checking: UPI can settle after the dialog
- * is gone.
+ * All three outcomes hand control back to the server. Nothing here decides
+ * whether money moved.
  */
 export async function openRazorpayCheckout(options: {
   keyId: string;
@@ -85,18 +107,18 @@ export async function openRazorpayCheckout(options: {
   currency: string;
   description: string;
   prefill: { name?: string | null; email?: string | null; contact?: string | null };
-}): Promise<CheckoutOutcome> {
+}): Promise<CheckoutResult> {
   await loadScript();
 
   const Razorpay = window.Razorpay;
   if (!Razorpay) throw new Error('Payment gateway is unavailable.');
 
-  return new Promise<CheckoutOutcome>((resolve) => {
+  return new Promise<CheckoutResult>((resolve) => {
     let settled = false;
-    const finish = (outcome: CheckoutOutcome) => {
+    const finish = (result: CheckoutResult) => {
       if (settled) return;
       settled = true;
-      resolve(outcome);
+      resolve(result);
     };
 
     const instance = new Razorpay({
@@ -114,8 +136,25 @@ export async function openRazorpayCheckout(options: {
         contact: options.prefill.contact ?? undefined,
       },
       theme: { color: '#0c6852' },
-      handler: () => finish('completed'),
-      modal: { ondismiss: () => finish('dismissed'), confirm_close: true },
+      handler: (response) =>
+        finish({
+          outcome: 'completed',
+          providerOrderId: response.razorpay_order_id ?? options.orderId,
+          providerPaymentId: response.razorpay_payment_id ?? '',
+          signature: response.razorpay_signature ?? '',
+        }),
+      modal: { ondismiss: () => finish({ outcome: 'dismissed' }), confirm_close: true },
+    });
+
+    /**
+     * A declined card or expired VPA closes the attempt without ever calling
+     * `handler`. Without this the promise would only settle via `ondismiss`,
+     * and the buyer would be told nothing about why it failed.
+     */
+    instance.on?.('payment.failed', (event) => {
+      const description = event?.error?.description ?? 'The payment did not go through.';
+      const reason = event?.error?.reason ? `${description} (${event.error.reason})` : description;
+      finish({ outcome: 'failed', reason });
     });
 
     instance.open();

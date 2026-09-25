@@ -35,6 +35,10 @@ export function createMockProvider(): PaymentProvider {
       };
     },
 
+    verifyCheckoutSignature() {
+      return true;
+    },
+
     verifyWebhookSignature() {
       return true;
     },

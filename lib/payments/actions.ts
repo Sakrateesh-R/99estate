@@ -191,7 +191,15 @@ export type VerifyResult =
  * Works without a public URL, which is what makes local development possible;
  * the webhook covers the case where the buyer never returns.
  */
-export async function verifyUnlockPayment(paymentId: string): Promise<VerifyResult> {
+export async function verifyUnlockPayment(
+  paymentId: string,
+  /**
+   * The signed payload Checkout returns on success. Optional because the
+   * buyer may never see it — they can close the tab, or land here from the
+   * dismissed branch after a late UPI settlement.
+   */
+  checkout?: { providerOrderId: string; providerPaymentId: string; signature: string },
+): Promise<VerifyResult> {
   const user = await getUser();
   if (!user) return { status: 'error', message: 'Your session expired. Please sign in again.' };
 
@@ -215,6 +223,39 @@ export async function verifyUnlockPayment(paymentId: string): Promise<VerifyResu
 
   const provider = getPaymentProvider();
 
+  /**
+   * Gate one: if Checkout handed back a signed payload, it must verify.
+   *
+   * Cheap (no network call) and it catches a forged or replayed response
+   * before we spend an API round trip on it. Two extra checks matter here:
+   * the order in the payload must be the order we created for this payment
+   * row, or a valid signature from some *other* order could be replayed
+   * against this one.
+   */
+  if (checkout?.signature) {
+    if (checkout.providerOrderId !== payment.provider_order_id) {
+      return {
+        status: 'failed',
+        message: 'That payment belongs to a different order. Nothing was unlocked.',
+      };
+    }
+
+    const authentic = provider.verifyCheckoutSignature({
+      providerOrderId: checkout.providerOrderId,
+      providerPaymentId: checkout.providerPaymentId,
+      signature: checkout.signature,
+    });
+
+    if (!authentic) {
+      return {
+        status: 'failed',
+        message: 'We could not verify that payment. Nothing was charged or unlocked.',
+      };
+    }
+  }
+
+  // Gate two: the gateway decides whether money actually moved. A valid
+  // signature proves authenticity, not capture.
   let statusResult;
   try {
     statusResult = await provider.fetchStatus(payment.provider_order_id);

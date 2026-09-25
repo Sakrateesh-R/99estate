@@ -62,6 +62,22 @@ export interface PaymentProvider {
   fetchStatus(providerOrderId: string): Promise<PaymentStatus>;
 
   /**
+   * Validates the signed payload Checkout hands back on success.
+   *
+   * Razorpay signs `order_id|payment_id` with the key secret. Verifying it
+   * proves the response genuinely came from Razorpay and was not forged or
+   * replayed by the browser, and costs nothing — no network call.
+   *
+   * It is a gate, not the final word: a valid signature proves authenticity,
+   * not that the money was captured. `fetchStatus` still decides.
+   */
+  verifyCheckoutSignature(input: {
+    providerOrderId: string;
+    providerPaymentId: string;
+    signature: string;
+  }): boolean;
+
+  /**
    * Must be computed over the RAW request body. Re-serialising parsed JSON
    * changes the bytes and the signature will never match.
    */

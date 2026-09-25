@@ -24,6 +24,9 @@ const API = 'https://api.razorpay.com/v1';
 const toPaise = (rupees: number) => Math.round(rupees * 100);
 const toRupees = (paise: number) => paise / 100;
 
+/** Razorpay's documented floor for an order. */
+const MINIMUM_PAISE = 100;
+
 export function createRazorpayProvider(config: {
   keyId: string;
   keySecret: string;
@@ -64,6 +67,15 @@ export function createRazorpayProvider(config: {
     publicKey: config.keyId,
 
     async createOrder({ amount, currency, receipt, notes }) {
+      // Razorpay rejects anything below 100 paise. Failing here gives a clear
+      // message instead of an opaque gateway error, and catches a bad
+      // `contact_unlock_price` in app_settings before money is involved.
+      if (toPaise(amount) < MINIMUM_PAISE) {
+        throw new PaymentProviderError(
+          `Razorpay requires at least ₹${MINIMUM_PAISE / 100}. The configured price is ₹${amount}.`,
+        );
+      }
+
       const order = await call<{ id: string; amount: number; currency: string }>('/orders', {
         method: 'POST',
         body: JSON.stringify({
@@ -101,6 +113,26 @@ export function createRazorpayProvider(config: {
         amountPaid: latest ? toRupees(latest.amount) : null,
         statusLabel: latest?.status ?? 'none',
       } satisfies PaymentStatus;
+    },
+
+    verifyCheckoutSignature({ providerOrderId, providerPaymentId, signature }) {
+      if (!providerOrderId || !providerPaymentId || !signature) return false;
+
+      // Razorpay's documented scheme: HMAC-SHA256 of "order_id|payment_id",
+      // keyed with the API secret, hex encoded.
+      const expected = createHmac('sha256', config.keySecret)
+        .update(`${providerOrderId}|${providerPaymentId}`)
+        .digest();
+
+      let received: Buffer;
+      try {
+        received = Buffer.from(signature, 'hex');
+      } catch {
+        return false;
+      }
+
+      if (expected.length !== received.length) return false;
+      return timingSafeEqual(expected, received);
     },
 
     verifyWebhookSignature(rawBody, signature) {
