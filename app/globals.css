@@ -1,0 +1,218 @@
+@import 'tailwindcss';
+
+/* ===========================================================================
+   99Estate design tokens
+   ---------------------------------------------------------------------------
+   A marketplace lives or dies on whether it feels trustworthy. The palette is
+   built around a deep estate green (money, permanence) with a warm gold used
+   *only* for the commercial moments — the ₹9 price, verified badges, the
+   free-quota meter — so the eye learns that gold = "this is about the offer".
+
+   Neutrals are a cool grey ("ink") rather than pure black, which keeps large
+   photo grids from looking harsh.
+   =========================================================================== */
+
+@theme {
+  /* ---- Typography ---------------------------------------------------- */
+  /* System stack: zero network cost and no webfont flash. Swapping in
+     next/font/google later only means reassigning these two variables. */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --font-display: var(--font-sans);
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* ---- Brand: estate green ------------------------------------------- */
+  --color-brand-50: #eefbf5;
+  --color-brand-100: #d5f5e6;
+  --color-brand-200: #aeead1;
+  --color-brand-300: #78d9b5;
+  --color-brand-400: #40c095;
+  --color-brand-500: #1ba47b;
+  --color-brand-600: #0f8364;
+  --color-brand-700: #0c6852;
+  --color-brand-800: #0d5343;
+  --color-brand-900: #0c4538;
+  --color-brand-950: #05271f;
+
+  /* ---- Accent: the money colour --------------------------------------- */
+  --color-accent-50: #fff9ec;
+  --color-accent-100: #fff1c9;
+  --color-accent-200: #ffe08e;
+  --color-accent-300: #ffc953;
+  --color-accent-400: #ffb12b;
+  --color-accent-500: #f98e07;
+  --color-accent-600: #dd6802;
+  --color-accent-700: #b74806;
+  --color-accent-800: #94380c;
+  --color-accent-900: #7a2f0d;
+
+  /* ---- Ink: cool neutrals --------------------------------------------- */
+  --color-ink-50: #f7f8fa;
+  --color-ink-100: #eef0f4;
+  --color-ink-200: #d8dde6;
+  --color-ink-300: #b4bccb;
+  --color-ink-400: #8b96aa;
+  --color-ink-500: #6b778e;
+  --color-ink-600: #556075;
+  --color-ink-700: #454e5f;
+  --color-ink-800: #3b4250;
+  --color-ink-900: #343945;
+  --color-ink-950: #12151c;
+
+  /* ---- Radii ------------------------------------------------------------
+     Squarer than a typical SaaS surface. Property portals sit closer to the
+     newspaper end of the spectrum: tighter corners read as denser and let
+     photography meet the card edge without a soft halo. */
+  --radius-card: 0.625rem;
+  --radius-field: 0.5rem;
+
+  /* ---- Elevation -------------------------------------------------------
+     Restrained: property photography should carry the page, not the chrome
+     around it. Hover lifts enough to signal the whole card is a target. */
+  --shadow-card: 0 1px 2px rgb(18 21 28 / 0.05), 0 2px 10px -4px rgb(18 21 28 / 0.09);
+  --shadow-card-hover: 0 2px 6px rgb(18 21 28 / 0.07), 0 14px 30px -12px rgb(18 21 28 / 0.2);
+  --shadow-pop: 0 10px 40px -8px rgb(18 21 28 / 0.22);
+
+  /* ---- Motion ---------------------------------------------------------- */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-ink-200);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-ink-50);
+    color: var(--color-ink-900);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
+    /* Last line of defence against sideways scroll on small screens.
+       `clip` rather than `hidden`: `hidden` turns the body into a scroll
+       container, which silently breaks every `position: sticky` header and
+       filter rail on the site. `clip` does not. */
+    overflow-x: clip;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.022em;
+    color: var(--color-ink-950);
+    text-wrap: balance;
+  }
+
+  /* Prices are the loudest thing on a property portal. Tabular figures stop
+     a column of them from jittering, and the tight tracking gives the number
+     weight without needing a larger size. */
+  .price {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+    font-weight: 700;
+    color: var(--color-ink-950);
+  }
+
+  /* Visible, brand-coloured focus for keyboard users on every interactive
+     element — the default ring is too easy to lose on photo-heavy pages. */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Hide number-input spinners: prices and areas are typed, not nudged. */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Page gutter used by every route so content lines up across the site. */
+  .container-page {
+    width: 100%;
+    margin-inline: auto;
+    max-width: 80rem;
+    padding-inline: 1rem;
+  }
+  @media (min-width: 640px) {
+    .container-page {
+      padding-inline: 1.5rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .container-page {
+      padding-inline: 2rem;
+    }
+  }
+
+  /* Skeleton shimmer shared by every loading state. */
+  .skeleton {
+    background-image: linear-gradient(
+      90deg,
+      var(--color-ink-100) 0%,
+      var(--color-ink-200) 40%,
+      var(--color-ink-100) 80%
+    );
+    background-size: 200% 100%;
+    animation: estate-shimmer 1.4s ease-in-out infinite;
+  }
+
+  /* Horizontal scrollers (filter chips, city rails) without a visible bar. */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes estate-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes estate-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-fade-up {
+  animation: estate-fade-up 0.32s var(--ease-out-soft) both;
+}
