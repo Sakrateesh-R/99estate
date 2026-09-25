@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getPaymentProvider } from '@/lib/payments';
+import { getServerEnv } from '@/lib/env';
 
 /**
  * §7 — gateway webhook. The only push path that can settle a paid unlock.
@@ -149,8 +150,17 @@ export async function GET() {
       // `test` keys take no real money. Surfaced so a live site left on test
       // credentials is visible without attempting a payment.
       mode: credentials.mode,
+      // Razorpay's key_id is public by design — Checkout ships it to every
+      // browser. Showing it answers "which key is this deployment actually
+      // holding", which is otherwise unanswerable from outside and is the
+      // difference between a wrong key and an unread one.
+      keyId: provider.publicKey,
       ...(credentials.valid ? {} : { credentialsReason: credentials.reason }),
-      webhookSecretSet: Boolean(process.env.PAYMENT_WEBHOOK_SECRET),
+      // Read through getServerEnv rather than process.env so this agrees with
+      // what the verifier actually uses — including the RAZORPAY_* aliases.
+      // Reading the raw variable here would report "no secret" while the
+      // webhook was verifying happily, or the reverse.
+      webhookSecretSet: Boolean(getServerEnv().PAYMENT_WEBHOOK_SECRET),
     });
   } catch (cause) {
     // Reports the shape of the misconfiguration, never a credential — this is

@@ -66,6 +66,49 @@ const serverSchema = z.object({
 
 export type ServerEnv = z.infer<typeof serverSchema>;
 
+/**
+ * Reads a provider-agnostic variable, falling back to the gateway's own
+ * naming.
+ *
+ * Razorpay's documentation calls these RAZORPAY_KEY_ID and
+ * RAZORPAY_KEY_SECRET, so that is what tends to get pasted into a dashboard,
+ * while this codebase names them by role rather than by vendor. Accepting
+ * both removes a silent failure where the credentials are present, correct,
+ * and simply never read.
+ *
+ * The role-named variable wins, because it is the one this code documents. If
+ * the two disagree, one of them is stale — say so rather than quietly picking
+ * a side, since the losing value is invisible from the outside.
+ */
+function pick(primary: string, alias: string): string | undefined {
+  /**
+   * Blank counts as absent, and the value is trimmed.
+   *
+   * Both come from how these get entered rather than how they are read. A
+   * dashboard will happily store an empty string, and `??` treats that as a
+   * real value — so a defined-but-blank variable would shadow the alias and
+   * report itself as configured. Pasting a key tends to bring a trailing
+   * newline with it, which survives into the Basic auth header and the HMAC
+   * and fails authentication for no visible reason.
+   */
+  const read = (name: string) => {
+    const value = process.env[name]?.trim();
+    return value ? value : undefined;
+  };
+
+  const a = read(primary);
+  const b = read(alias);
+
+  if (a && b && a !== b) {
+    console.warn(
+      `[env] ${primary} and ${alias} are both set to different values. ` +
+        `Using ${primary}. Delete whichever is stale — the other is being ignored.`,
+    );
+  }
+
+  return a ?? b;
+}
+
 let cachedServerEnv: ServerEnv | null = null;
 
 /**
@@ -81,9 +124,9 @@ export function getServerEnv(): ServerEnv {
   const parsed = serverSchema.safeParse({
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER ?? 'mock',
-    PAYMENT_PROVIDER_KEY: process.env.PAYMENT_PROVIDER_KEY,
-    PAYMENT_PROVIDER_SECRET: process.env.PAYMENT_PROVIDER_SECRET,
-    PAYMENT_WEBHOOK_SECRET: process.env.PAYMENT_WEBHOOK_SECRET,
+    PAYMENT_PROVIDER_KEY: pick('PAYMENT_PROVIDER_KEY', 'RAZORPAY_KEY_ID'),
+    PAYMENT_PROVIDER_SECRET: pick('PAYMENT_PROVIDER_SECRET', 'RAZORPAY_KEY_SECRET'),
+    PAYMENT_WEBHOOK_SECRET: pick('PAYMENT_WEBHOOK_SECRET', 'RAZORPAY_WEBHOOK_SECRET'),
   });
 
   if (!parsed.success) {
