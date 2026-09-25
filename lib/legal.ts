@@ -1,54 +1,54 @@
 /**
  * Legal identity and contact details used by /terms and /privacy.
  *
- * These are placeholders. Indian law requires several of them to be real and
- * published:
+ * Several of these are required to be real and published under Indian law:
  *
  *   IT Rules 2021, Rule 3(2)   a named Grievance Officer with contact details,
  *                              acknowledging complaints in 24 hours and
  *                              resolving them in 15 days
- *   DPDP Act 2023, s.5         the identity and contact of the Data Fiduciary,
- *                              in the notice shown when consent is taken
- *   CP (E-Commerce) Rules 2020 the legal name and registered address of the
- *                              marketplace entity
- *
- * Fill every value below before launch. While any placeholder remains, both
- * legal pages render a visible "not final" banner — so an unfinished document
- * cannot quietly pass for a binding one.
+ *   DPDP Act 2023, s.5         the identity and contact of the Data Fiduciary
+ *   CP (E-Commerce) Rules 2020 the legal name and registered address
  */
 
 export const LEGAL = {
-  /** Registered legal name of the operating entity, e.g. "Acme Proptech Pvt Ltd". */
-  entityName: '[LEGAL ENTITY NAME]',
-  /** Registered office address as filed with the MCA. */
-  registeredAddress: '[REGISTERED OFFICE ADDRESS]',
-  /** CIN / LLPIN, or a proprietorship's GSTIN. Optional but expected. */
-  registrationNumber: '[CIN / REGISTRATION NUMBER]',
+  /** Operating entity behind 99Estate. */
+  entityName: 'Sakdha',
+  registeredAddress: '282/9, Rasi Nagar, Chinna Andan Kovil Road, Karur, Tamil Nadu, India',
+  /** Empty until the entity has a CIN/LLPIN/GSTIN worth publishing. */
+  registrationNumber: '',
 
   /** IT Rules 2021 requires this person to be named publicly. */
-  grievanceOfficerName: '[GRIEVANCE OFFICER NAME]',
-  grievanceOfficerEmail: '[grievance@99estate.in]',
+  grievanceOfficerName: 'Sakrateesh R',
+  grievanceOfficerEmail: 'sakdha20241@gmail.com',
 
-  /** General support and privacy contact. */
-  supportEmail: '[support@99estate.in]',
-  privacyEmail: '[privacy@99estate.in]',
+  supportEmail: 'sakdha20241@gmail.com',
+  privacyEmail: 'sakdha20241@gmail.com',
 
-  /** Courts of this city get exclusive jurisdiction. */
-  jurisdictionCity: '[CITY]',
-  jurisdictionState: '[STATE]',
+  jurisdictionCity: 'Karur',
+  jurisdictionState: 'Tamil Nadu',
 
-  /** Shown as "last updated" on both documents. */
   lastUpdated: '25 September 2026',
 } as const;
 
 /**
- * True while any value is still a bracketed placeholder.
+ * Flip to `true` only once a qualified Indian privacy/legal professional has
+ * reviewed and approved both documents.
  *
- * Drives the warning banner, so the documents advertise their own
- * incompleteness instead of looking authoritative before review.
+ * Kept separate from the placeholder check because the two failure modes are
+ * different: missing details make a document incomplete, whereas complete but
+ * unreviewed text can look authoritative while still being wrong. Both
+ * documents state this caveat themselves, so the banner matches the text.
  */
-export function hasLegalPlaceholders(): boolean {
-  return Object.values(LEGAL).some((value) => value.includes('[') && value.includes(']'));
+export const REVIEWED_BY_COUNSEL = false;
+
+export type LegalReviewState = 'placeholders' | 'pending-review' | 'approved';
+
+export function legalReviewState(): LegalReviewState {
+  const unresolved = Object.values(LEGAL).some(
+    (value) => value.includes('[') && value.includes(']'),
+  );
+  if (unresolved) return 'placeholders';
+  return REVIEWED_BY_COUNSEL ? 'approved' : 'pending-review';
 }
 
 /** Business constants restated in the legal text, kept in one place. */
