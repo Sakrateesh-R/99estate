@@ -29,6 +29,31 @@ function matchesPrefix(pathname: string, prefixes: string[]) {
  * which run even when middleware is bypassed.
  */
 export async function updateSession(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+
+  /**
+   * Rescue an OAuth code that landed on the wrong page.
+   *
+   * Supabase validates `redirect_to` against its Redirect URLs allow-list. If
+   * the callback is not listed it silently falls back to the project's Site
+   * URL — so the user arrives at `/?code=…` instead of `/auth/callback`, the
+   * code is never exchanged, and they appear signed out with a stray
+   * parameter in the address bar.
+   *
+   * Forwarding it fixes the session (the code is valid wherever it lands) and
+   * clears the parameter, because the callback route redirects onward once it
+   * is spent. The allow-list is still the real fix; this stops a
+   * configuration slip from looking like a broken login.
+   */
+  const oauthCode = request.nextUrl.searchParams.get('code');
+  const oauthError = request.nextUrl.searchParams.get('error');
+
+  if ((oauthCode || oauthError) && pathname !== '/auth/callback') {
+    const url = request.nextUrl.clone();
+    url.pathname = '/auth/callback';
+    return NextResponse.redirect(url);
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient<Database>(
@@ -53,8 +78,6 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const { pathname, search } = request.nextUrl;
 
   if (!user && matchesPrefix(pathname, PROTECTED_PREFIXES)) {
     // Remember the destination in a cookie rather than a `?next=` parameter,
