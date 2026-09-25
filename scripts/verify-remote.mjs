@@ -182,6 +182,52 @@ async function main() {
       .eq('buyer_id', testUserId);
     check('each settled unlock created a lead', leadCount === 2, `leads=${leadCount}`);
 
+    // --- §7: paid settlement is idempotent under webhook retries -----------
+    // Gateways retry. If a replay created a second unlock or a second lead,
+    // a buyer would be double-granted and the seller double-counted.
+    {
+      const { data: order } = await user.rpc('create_contact_unlock_order', {
+        p_property_id: properties[2].id,
+        p_provider: 'mock',
+      });
+      check('paid order is created at the server price', Number(order?.amount) === 9, String(order?.amount));
+
+      if (order?.payment_id) {
+        const settleOnce = () =>
+          admin.rpc('settle_paid_contact_unlock', {
+            p_payment_id: order.payment_id,
+            p_provider_payment_id: 'verify_replay',
+            p_metadata: { source: 'verify-remote' },
+          });
+
+        const first = await settleOnce();
+        check('first settlement succeeds', first.data?.code === 'settled', first.data?.code);
+
+        const before = await admin
+          .from('contact_unlocks')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', testUserId);
+
+        const replay = await settleOnce();
+        check('replayed settlement is a no-op', replay.data?.code === 'already_settled', replay.data?.code);
+
+        const after = await admin
+          .from('contact_unlocks')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', testUserId);
+
+        check('replay did not create a second unlock', before.count === after.count,
+          `${before.count} -> ${after.count}`);
+
+        const { count: payments } = await admin
+          .from('payments')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', testUserId)
+          .eq('status', 'success');
+        check('buyer is charged exactly once', payments === 1, `successful payments=${payments}`);
+      }
+    }
+
     // --- Anonymous access ---------------------------------------------------
     const anon = createClient(url, anonKey, { auth: { persistSession: false } });
     const anonProps = await anon.from('properties').select('id').eq('status', 'published').limit(5);

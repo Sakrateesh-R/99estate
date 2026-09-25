@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   BadgeCheck,
@@ -14,11 +13,12 @@ import {
 } from 'lucide-react';
 import { cn, propertyPath } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/toast';
 import { formatMobile, telHref, whatsappHref, formatQuotaReset } from '@/lib/format';
 import { SELLER_TYPE_LABELS } from '@/lib/constants';
 import { unlockContact, type ContactState } from '@/lib/contacts/actions';
+import { createUnlockOrder, verifyUnlockPayment } from '@/lib/payments/actions';
+import { openRazorpayCheckout } from '@/lib/payments/checkout';
 import { rememberReturnTo } from '@/lib/auth/return-to-actions';
 import type { Enums } from '@/types/database.types';
 
@@ -54,7 +54,7 @@ export function ContactUnlockCard({
   const [seller, setSeller] = React.useState<Seller | null>(state.seller);
   const [freeRemaining, setFreeRemaining] = React.useState<number | null>(state.freeRemaining);
   const [busy, setBusy] = React.useState(false);
-  const [paymentNotice, setPaymentNotice] = React.useState(false);
+  const [payingLabel, setPayingLabel] = React.useState<string | null>(null);
 
   const nextPath = propertyPath({ id: propertyId, slug: propertySlug });
 
@@ -65,6 +65,97 @@ export function ContactUnlockCard({
   async function goToAuth(target: '/login' | '/complete-profile') {
     await rememberReturnTo(nextPath);
     router.push(target);
+  }
+
+  /**
+   * §7 — the paid path.
+   *
+   * The browser's only jobs are opening the gateway dialog and then asking the
+   * server to re-check. It never reports the outcome: `verifyUnlockPayment`
+   * queries Razorpay server-side and settles through the idempotent RPC.
+   *
+   * The dismissed branch matters as much as the completed one — UPI can settle
+   * after the dialog is closed, so we re-check either way.
+   */
+  async function startPayment() {
+    setPayingLabel('Starting payment…');
+
+    const order = await createUnlockOrder(propertyId);
+
+    switch (order.status) {
+      case 'free_available':
+        // A free unlock became available between the two calls.
+        setPayingLabel(null);
+        return handleUnlock();
+      case 'already_unlocked':
+        setPayingLabel(null);
+        router.refresh();
+        return;
+      case 'sign_in_required':
+        setPayingLabel(null);
+        return goToAuth('/login');
+      case 'profile_incomplete':
+        setPayingLabel(null);
+        return goToAuth('/complete-profile');
+      case 'own_listing':
+      case 'unavailable':
+        setPayingLabel(null);
+        toast({ tone: 'warning', title: 'This listing cannot be unlocked' });
+        return;
+      case 'error':
+        setPayingLabel(null);
+        toast({ tone: 'error', title: 'Payment could not start', description: order.message });
+        return;
+      case 'order_created':
+        break;
+    }
+
+    try {
+      // The dev mock has no public key and no dialog — go straight to
+      // verification so the flow is testable without gateway credentials.
+      if (order.publicKey) {
+        setPayingLabel('Waiting for payment…');
+        await openRazorpayCheckout({
+          keyId: order.publicKey,
+          orderId: order.providerOrderId,
+          amountInRupees: order.amount,
+          currency: order.currency,
+          description: `Contact unlock · ${order.propertyTitle}`.slice(0, 250),
+          prefill: {
+            name: order.buyerName,
+            email: order.buyerEmail,
+            contact: order.buyerMobile,
+          },
+        });
+      }
+
+      setPayingLabel('Confirming payment…');
+      const verified = await verifyUnlockPayment(order.paymentId);
+
+      switch (verified.status) {
+        case 'unlocked':
+          setSeller(verified.seller);
+          toast({ tone: 'success', title: 'Payment confirmed', description: 'Contact unlocked.' });
+          router.refresh();
+          break;
+        case 'pending':
+          toast({ tone: 'info', title: 'Payment not confirmed yet', description: verified.message });
+          break;
+        case 'failed':
+          toast({ tone: 'error', title: 'Payment problem', description: verified.message });
+          break;
+        default:
+          toast({ tone: 'error', title: 'Could not confirm payment', description: verified.message });
+      }
+    } catch (cause) {
+      toast({
+        tone: 'error',
+        title: 'Payment could not be completed',
+        description: cause instanceof Error ? cause.message : undefined,
+      });
+    } finally {
+      setPayingLabel(null);
+    }
   }
 
   async function handleUnlock() {
@@ -87,7 +178,7 @@ export function ContactUnlockCard({
           break;
 
         case 'payment_required':
-          setPaymentNotice(true);
+          await startPayment();
           break;
 
         case 'sign_in_required':
@@ -254,17 +345,35 @@ export function ContactUnlockCard({
               Add your mobile number to unlock
             </Button>
           ) : (
-            <Button variant="unlock" size="lg" fullWidth loading={busy} onClick={handleUnlock}>
-              <Lock className="size-4" aria-hidden />
-              Unlock contact
-              {mustPay ? (
-                <span className="ml-1 rounded bg-ink-950/15 px-2 py-0.5 text-sm font-bold">
-                  ₹{state.price}
-                </span>
-              ) : null}
+            <Button
+              variant="unlock"
+              size="lg"
+              fullWidth
+              loading={busy || payingLabel !== null}
+              onClick={handleUnlock}
+            >
+              {payingLabel ? (
+                payingLabel
+              ) : (
+                <>
+                  <Lock className="size-4" aria-hidden />
+                  Unlock contact
+                  {mustPay ? (
+                    <span className="ml-1 rounded bg-ink-950/15 px-2 py-0.5 text-sm font-bold">
+                      ₹{state.price}
+                    </span>
+                  ) : null}
+                </>
+              )}
             </Button>
           )}
         </div>
+
+        {mustPay ? (
+          <p className="mt-2.5 text-center text-[0.6875rem] text-ink-500">
+            Pay by UPI, card, net banking or wallet · secured by Razorpay
+          </p>
+        ) : null}
 
         <ul className="mt-4 space-y-1.5">
           <Assurance>Property details are free — you only pay for the contact</Assurance>
@@ -272,32 +381,6 @@ export function ContactUnlockCard({
           <Assurance>No brokerage and no commission on your deal</Assurance>
         </ul>
       </Card>
-
-      <Dialog
-        open={paymentNotice}
-        onClose={() => setPaymentNotice(false)}
-        title={`Paid unlocks are not live yet`}
-        description={`You have used both free contacts for today.`}
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setPaymentNotice(false)}>
-              Close
-            </Button>
-            <Link
-              href="/properties"
-              className="inline-flex h-11 items-center justify-center rounded-field bg-brand-700 px-4 text-[0.9375rem] font-semibold text-white hover:bg-brand-800"
-            >
-              Keep browsing — it&rsquo;s free
-            </Link>
-          </>
-        }
-      >
-        <p className="text-sm leading-relaxed text-ink-600">
-          The ₹{state.price} payment flow is still being wired up. Your free quota
-          {state.resetsAt ? ` resets ${formatQuotaReset(state.resetsAt)}` : ' resets at midnight IST'},
-          and every listing stays fully viewable in the meantime.
-        </p>
-      </Dialog>
     </>
   );
 }

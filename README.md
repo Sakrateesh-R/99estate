@@ -226,9 +226,44 @@ filter set, six sort modes and pagination; the property detail page with the Unl
 CTA; saved properties; property reporting; sitemap and robots.
 
 **Next** — the seller lead inbox and analytics (§11, §15), the admin console (§16),
-verification review (§14), in-app notification UI (§19), and last of all the ₹9 payment
-integration (§7). Payments are deliberately final: the database side of a paid unlock
-(`create_contact_unlock_order`, `settle_paid_contact_unlock`, the idempotent webhook
-settlement) already exists and is tested, so wiring a gateway is the remaining work. Until
-then the UI tells users plainly that paid unlocks are not live yet rather than failing
-silently.
+verification review (§14), and the in-app notification UI (§19).
+
+---
+
+## Payments (§7)
+
+Razorpay, behind a provider-agnostic interface in `lib/payments/`. Swapping gateway means
+writing one adapter; nothing above that directory knows the provider exists.
+
+Razorpay Checkout is what delivers the UPI experience — a QR to scan on desktop, a hand-off
+to GPay/PhonePe/Paytm on mobile — while still producing an order that can be verified. A raw
+`upi://` deep link or a static QR to a personal VPA cannot be: the money moves bank to bank,
+your server is never told, and the only "confirmation" available is the buyer's word, which
+Rule 7 forbids.
+
+**Two verification paths, because one is not enough.**
+
+| | When it runs | Needs a public URL |
+| --- | --- | --- |
+| `verifyUnlockPayment()` | buyer returns from checkout | no — works on localhost |
+| `/api/webhooks/razorpay` | buyer closed the tab mid-payment | yes |
+
+Without the webhook, someone who pays in GPay and then closes the browser is charged with
+the contact still locked. Both routes settle through `settle_paid_contact_unlock()`, which is
+idempotent — whichever arrives first wins and the other is a no-op, so gateway retries cannot
+double-grant or double-charge. That is asserted by `npm run db:verify:remote`.
+
+The browser never reports an outcome. It can ask the server to re-check a payment id; the
+amount, the status and the gateway payment id all come from an authenticated server-side call.
+
+**Setup**
+
+1. Razorpay Dashboard → *API Keys* → set `PAYMENT_PROVIDER_KEY` (`key_id`) and
+   `PAYMENT_PROVIDER_SECRET` (`key_secret`), then `PAYMENT_PROVIDER=razorpay`.
+2. Razorpay Dashboard → *Webhooks* → `https://<domain>/api/webhooks/razorpay`, events
+   `payment.captured` and `order.paid`. Put the signing secret in `PAYMENT_WEBHOOK_SECRET`.
+3. `GET /api/webhooks/razorpay` reports `{ configured: true }` once the provider loads.
+
+`PAYMENT_PROVIDER=mock` treats every order as paid so the flow can be exercised without an
+account. It throws on `NODE_ENV=production` — a mis-set variable on a live deployment would
+otherwise give away every paid contact silently.
