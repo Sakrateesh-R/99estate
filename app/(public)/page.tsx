@@ -72,18 +72,25 @@ export default async function HomePage() {
       <Hero cities={cities} backdrop={featured[0]?.cover_image_url ?? latest[0]?.cover_image_url ?? null} />
       <UspBand />
 
-      <PropertyRail
-        title="Featured properties"
-        description="Hand-picked listings from verified sellers."
-        properties={featured}
-        viewAllHref="/properties?featured=1"
-        emptyTitle="No featured listings yet"
-        emptyDescription="Featured slots open up as sellers list and verify their properties. Yours could be first."
-        priority
-        photoCounts={photoCounts}
-        savedIds={savedIds}
-        unlocked={unlocked}
-      />
+      {/*
+        Hidden entirely when there is nothing to feature, rather than shown with
+        an empty state. "No featured listings yet" told a buyer about a slot
+        scheme they have no part in, directly above real properties they could
+        have been looking at — the same reasoning the categories and locations
+        sections below already follow.
+      */}
+      {featured.length > 0 ? (
+        <PropertyRail
+          title="Featured properties"
+          description="Hand-picked listings from verified sellers."
+          properties={featured}
+          viewAllHref="/properties?featured=1"
+          priority
+          photoCounts={photoCounts}
+          savedIds={savedIds}
+          unlocked={unlocked}
+        />
+      ) : null}
 
       {categories.length > 0 ? <BrowseByType categories={categories} /> : null}
 
@@ -95,6 +102,12 @@ export default async function HomePage() {
         viewAllLabel="Browse all properties"
         emptyTitle="No listings yet"
         emptyDescription="This marketplace is brand new. Post the first property — it costs nothing and takes a few minutes."
+        /*
+          Takes over the eager image loading when the featured rail is gone: with
+          nothing above it, this rail holds the largest image on screen, and
+          leaving it lazy would delay the one thing the page is measured on.
+        */
+        priority={featured.length === 0}
         photoCounts={photoCounts}
         savedIds={savedIds}
         unlocked={unlocked}

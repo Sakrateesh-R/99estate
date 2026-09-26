@@ -30,13 +30,25 @@ export function PropertyRail({
   properties: PropertyCardData[];
   viewAllHref?: string;
   viewAllLabel?: string;
-  emptyTitle: string;
-  emptyDescription: string;
+  /**
+   * Omit both to make the rail disappear when it has nothing to show, instead
+   * of announcing a heading over an empty state. Supply them for a rail whose
+   * absence would leave the page with no properties on it at all.
+   */
+  emptyTitle?: string;
+  emptyDescription?: string;
   priority?: boolean;
   photoCounts?: Map<string, number>;
   savedIds?: Set<string>;
   unlocked?: Map<string, UnlockedContact>;
 }) {
+  /**
+   * A heading with nothing under it is worse than no section: it takes up the
+   * space where a buyer was looking for properties in order to tell them there
+   * are none. A caller that has something to say in that case says it.
+   */
+  if (properties.length === 0 && !emptyTitle) return null;
+
   return (
     <section className="container-page py-12 lg:py-16">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -60,7 +72,8 @@ export function PropertyRail({
         <div className="mt-6">
           <EmptyState
             icon={<Building2 className="size-6" />}
-            title={emptyTitle}
+            // Non-null: the early return above covers the absent case.
+            title={emptyTitle!}
             description={emptyDescription}
             action={
               <ButtonLink href="/dashboard/properties/new" size="sm">
