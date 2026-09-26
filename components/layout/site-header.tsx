@@ -1,17 +1,16 @@
 import Link from 'next/link';
 import { Suspense } from 'react';
-import { Heart, Plus, Sparkles } from 'lucide-react';
+import { Plus, Sparkles } from 'lucide-react';
 import { Logo } from '@/components/layout/logo';
-import { UserMenu } from '@/components/layout/user-menu';
-import { NotificationBell } from '@/components/layout/notification-bell';
 import { MobileNav, type NavLink } from '@/components/layout/mobile-nav';
-import { HeaderSearch } from '@/components/layout/header-search';
-import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
+import {
+  HeaderAccountFallback,
+  HeaderAccountMenu,
+  HeaderQuickLinks,
+  HeaderSearchSlot,
+  MobileAuthSlot,
+} from '@/components/layout/header-slots';
 import { ButtonLink } from '@/components/ui/button';
-import { getAuthContext } from '@/lib/auth/session';
-import { getDailyContactUsage, freeQuotaLabel } from '@/lib/contacts/usage';
-import { getNotificationInbox } from '@/lib/notifications/queries';
-import { getActiveCities } from '@/lib/properties/queries';
 import { FREE_DAILY_UNLOCKS, PAID_UNLOCK_PRICE } from '@/lib/constants';
 
 const PRIMARY_LINKS: NavLink[] = [
@@ -30,29 +29,21 @@ const SECONDARY_LINKS: NavLink[] = [
 /**
  * Portal-style header.
  *
- * Two tiers rather than one: identity and account controls on top, a
- * persistent search below. That second row is what makes the site feel like a
- * property portal instead of a SaaS dashboard — a property session is a
- * sequence of searches, so search must never be more than one click away.
+ * Two tiers rather than one: identity and account controls on top, a persistent
+ * search below. That second row is what makes the site feel like a property
+ * portal instead of a SaaS dashboard — a property session is a sequence of
+ * searches, so search must never be more than one click away.
+ *
+ * Deliberately not `async`, and nothing here awaits.
+ *
+ * This component sits in a layout, and a layout has to finish rendering before
+ * anything downstream of it can be sent. When it awaited the session, the quota,
+ * the city list and the notification inbox, the browser got no HTML for over a
+ * second — which made every route's `loading.tsx` useless, because a loading
+ * fallback needs a shell to appear inside. The markup below flushes immediately
+ * and each piece of data arrives in its own Suspense boundary.
  */
-export async function SiteHeader() {
-  const { user, profile } = await getAuthContext();
-  const [usage, cities, inbox] = await Promise.all([
-    user ? getDailyContactUsage() : Promise.resolve(null),
-    getActiveCities(),
-    // Signed-out visitors have no inbox, and asking would be a round trip that
-    // can only ever come back empty.
-    user ? getNotificationInbox() : Promise.resolve(null),
-  ]);
-
-  const authSlot = user ? (
-    <ButtonLink href="/dashboard" variant="outline" fullWidth>
-      Go to dashboard
-    </ButtonLink>
-  ) : (
-    <GoogleSignInButton />
-  );
-
+export function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 border-b border-ink-200 bg-white">
       {/* USP strip — the pricing model, stated before anything else. */}
@@ -86,32 +77,12 @@ export async function SiteHeader() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          {usage ? (
-            <Link
-              href="/dashboard"
-              className="hidden items-center gap-1.5 rounded-full bg-accent-50 px-3 py-1.5 text-xs font-semibold text-accent-800 ring-1 ring-inset ring-accent-200 transition-colors hover:bg-accent-100 xl:inline-flex"
-              title="Your free contact unlocks reset at midnight IST"
-            >
-              <span className="size-1.5 rounded-full bg-accent-500" aria-hidden />
-              {freeQuotaLabel(usage)}
-            </Link>
-          ) : null}
+          <Suspense fallback={null}>
+            <HeaderQuickLinks />
+          </Suspense>
 
-          {user ? (
-            <Link
-              href="/saved"
-              className="hidden size-10 place-items-center rounded-lg text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-900 sm:grid"
-              aria-label="Saved properties"
-            >
-              <Heart className="size-5" />
-            </Link>
-          ) : null}
-
-          {/* Shown at every width, unlike the saved-properties shortcut: an
-              unread approval or enquiry is news, and news should not be
-              something only desktop users find out about. */}
-          {inbox ? <NotificationBell items={inbox.items} unread={inbox.unread} /> : null}
-
+          {/* Static, and ahead of the account menu in the markup so the main
+              call to action is clickable before the session resolves. */}
           <ButtonLink href="/dashboard/properties/new" size="sm" className="hidden sm:inline-flex">
             <Plus className="size-4" aria-hidden />
             Post property
@@ -120,34 +91,29 @@ export async function SiteHeader() {
             </span>
           </ButtonLink>
 
-          {user && profile ? (
-            <UserMenu
-              profile={{
-                fullName: profile.full_name,
-                email: profile.email,
-                avatarUrl: profile.avatar_url,
-                isAdmin: profile.role === 'admin',
-              }}
-            />
-          ) : (
-            <Link
-              href="/login"
-              className="hidden rounded-field px-3 py-2 text-sm font-semibold text-ink-800 transition-colors hover:bg-ink-100 lg:inline-flex"
-            >
-              Sign in
-            </Link>
-          )}
+          <Suspense fallback={<HeaderAccountFallback />}>
+            <HeaderAccountMenu />
+          </Suspense>
 
-          <MobileNav links={PRIMARY_LINKS} secondaryLinks={SECONDARY_LINKS} authSlot={authSlot} />
+          <MobileNav
+            links={PRIMARY_LINKS}
+            secondaryLinks={SECONDARY_LINKS}
+            authSlot={
+              <Suspense fallback={null}>
+                <MobileAuthSlot />
+              </Suspense>
+            }
+          />
         </div>
       </div>
 
       {/* ---- Tier 2: persistent search. Renders nothing on the home page,
            where the hero carries a larger version of the same control.
            useSearchParams needs a Suspense boundary or the whole tree opts
-           into client-side rendering. ---- */}
+           into client-side rendering — and the city list streams into the same
+           boundary rather than blocking the shell above. ---- */}
       <Suspense fallback={null}>
-        <HeaderSearch cities={cities} />
+        <HeaderSearchSlot />
       </Suspense>
     </header>
   );
