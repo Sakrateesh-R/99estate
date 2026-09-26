@@ -60,6 +60,7 @@ export default async function NewPropertyPage() {
           initialImages={[]}
           amenityOptions={amenityOptions}
           cities={cities}
+          publishesDirectly={profile.role === 'admin'}
         />
       </div>
     </div>

@@ -120,6 +120,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
           initialImages={data.images}
           amenityOptions={amenityOptions}
           cities={cities}
+          publishesDirectly={isAdmin}
         />
       </div>
     </div>

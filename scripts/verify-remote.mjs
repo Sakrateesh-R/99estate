@@ -661,6 +661,7 @@ async function main() {
         let unreachable;
         let posted;
         let photoAsAdmin;
+        let approvedDraft;
         try {
           /**
            * The owner has a name but no mobile yet, so `profile_is_complete`
@@ -700,6 +701,18 @@ async function main() {
               })
               .select('id')
               .maybeSingle();
+
+            /**
+             * The path `submitPropertyForReview` now takes for an admin: publish
+             * outright rather than queue for review, since the admin is the
+             * reviewer. Goes through the RPC so the 90-day clock, published_at
+             * and the seller's notification are all set by the routine that owns
+             * those side effects — and it has to accept a `draft`, not only a
+             * `pending` listing.
+             */
+            approvedDraft = await user.rpc('admin_approve_property', {
+              p_property_id: posted.data.id,
+            });
           }
         } finally {
           await admin.from('profiles').update({ role: priorRole }).eq('id', testUserId);
@@ -730,13 +743,35 @@ async function main() {
           photoAsUser.error !== null,
           photoAsUser.error ? photoAsUser.error.code : 'INSERT WAS ALLOWED');
 
-        // The seller owns it, not the platform — so it behaves like any listing.
-        const asSeller = await admin
-          .from('properties').select('seller_id, status, seller_type')
-          .eq('id', posted.data?.id).maybeSingle();
-        check('an on-behalf listing starts as a draft owned by the seller',
-          asSeller.data?.seller_id === ownerId && asSeller.data?.status === 'draft',
-          JSON.stringify(asSeller.data));
+        // --- An admin's submission publishes outright ------------------------
+        check('an admin can publish a draft without a review queue',
+          approvedDraft?.data?.ok === true && approvedDraft?.data?.code === 'published',
+          approvedDraft?.error?.message ?? JSON.stringify(approvedDraft?.data));
+
+        const live = await admin
+          .from('properties')
+          .select('seller_id, status, published_at, expires_at')
+          .eq('id', posted.data?.id)
+          .maybeSingle();
+
+        check('publishing sets the 90-day clock and keeps the seller as owner',
+          live.data?.status === 'published' &&
+            live.data?.seller_id === ownerId &&
+            Boolean(live.data?.published_at) &&
+            new Date(live.data?.expires_at).getTime() > Date.now(),
+          JSON.stringify(live.data));
+
+        // The seller finds out, which is the whole reason to go through the RPC
+        // rather than an UPDATE — and matters most for a seller who was posted
+        // on behalf of and is hearing about their own listing for the first time.
+        const told = await admin
+          .from('notifications')
+          .select('type, data')
+          .eq('user_id', ownerId)
+          .eq('type', 'property_approved');
+        check('the seller is told their listing went live',
+          (told.data ?? []).some((n) => n.data?.property_id === posted.data?.id),
+          `rows=${told.data?.length ?? 0}`);
       } finally {
         // Cascades the on-behalf listing away with its owner.
         await admin.auth.admin.deleteUser(ownerId);

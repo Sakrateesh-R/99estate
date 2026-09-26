@@ -81,6 +81,7 @@ export function PropertyWizard({
   initialImages,
   amenityOptions,
   cities,
+  publishesDirectly = false,
 }: {
   propertyId: string | null;
   initialValues: WizardValues;
@@ -88,6 +89,12 @@ export function PropertyWizard({
   initialImages: RegisteredImage[];
   amenityOptions: { name: string; category: string }[];
   cities: { city: string; state: string }[];
+  /**
+   * True for an admin, whose submission goes live immediately rather than into
+   * the moderation queue. Only changes what the screen promises — the server
+   * decides, from the session, which of the two actually happens.
+   */
+  publishesDirectly?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -210,11 +217,21 @@ export function PropertyWizard({
         return;
       }
 
-      toast({
-        tone: 'success',
-        title: 'Submitted for review',
-        description: 'We will let you know as soon as it goes live.',
-      });
+      // An admin's listing is published outright rather than queued, so the
+      // confirmation has to describe what actually happened.
+      toast(
+        result.data.status === 'published'
+          ? {
+              tone: 'success',
+              title: 'Published',
+              description: 'It is live in search now, for the next 90 days.',
+            }
+          : {
+              tone: 'success',
+              title: 'Submitted for review',
+              description: 'We will let you know as soon as it goes live.',
+            },
+      );
       router.push('/dashboard/properties');
       router.refresh();
     } finally {
@@ -286,7 +303,13 @@ export function PropertyWizard({
               <PreviewStep values={values} amenities={amenities} images={initialImages} />
             ) : null}
 
-            {step === 7 ? <SubmitStep values={values} imageCount={imageCount} /> : null}
+            {step === 7 ? (
+              <SubmitStep
+                values={values}
+                imageCount={imageCount}
+                publishesDirectly={publishesDirectly}
+              />
+            ) : null}
           </div>
         </div>
 
@@ -306,7 +329,7 @@ export function PropertyWizard({
           ) : (
             <Button onClick={submit} loading={busy} disabled={needsMorePhotos} size="lg">
               <SendHorizonal className="size-4" aria-hidden />
-              Submit for review
+              {publishesDirectly ? 'Publish now' : 'Submit for review'}
             </Button>
           )}
 
@@ -417,19 +440,38 @@ function StepRail({ step, onSelect }: { step: number; onSelect: (target: number)
   );
 }
 
-function SubmitStep({ values, imageCount }: { values: WizardValues; imageCount: number }) {
+function SubmitStep({
+  values,
+  imageCount,
+  publishesDirectly,
+}: {
+  values: WizardValues;
+  imageCount: number;
+  publishesDirectly: boolean;
+}) {
   return (
     <div className="space-y-5">
       <div className="rounded-field border border-brand-200 bg-brand-50/60 p-5">
         <h3 className="text-sm font-semibold text-brand-900">What happens next</h3>
         <ol className="mt-3 space-y-2.5 text-sm text-ink-700">
+          {/* An admin is the reviewer, so promising them a review would be
+              describing a queue they are standing on the other side of. */}
+          {publishesDirectly ? (
+            <li className="flex gap-2.5">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-600" aria-hidden />
+              This publishes immediately — no review queue, because you are the reviewer.
+            </li>
+          ) : (
+            <li className="flex gap-2.5">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-600" aria-hidden />
+              Our team reviews the listing — usually within a few hours.
+            </li>
+          )}
           <li className="flex gap-2.5">
             <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-600" aria-hidden />
-            Our team reviews the listing — usually within a few hours.
-          </li>
-          <li className="flex gap-2.5">
-            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-600" aria-hidden />
-            Once approved it goes live for 90 days and appears in search.
+            {publishesDirectly
+              ? 'It goes live for 90 days and appears in search straight away.'
+              : 'Once approved it goes live for 90 days and appears in search.'}
           </li>
           <li className="flex gap-2.5">
             <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-600" aria-hidden />

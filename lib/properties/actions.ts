@@ -147,8 +147,36 @@ export async function setPropertyAmenities(
 // ---------------------------------------------------------------------------
 
 /**
- * §12 — moves a draft to `pending`. Admin approval is what makes it public;
- * the status guard trigger refuses any attempt to go straight to `published`.
+ * Which step of the wizard a missing field lives on, so the failure can say
+ * where to go rather than only what is wrong. A seller sitting on step 7 being
+ * told "area is required" has still been left to hunt for it.
+ */
+const FIELD_STEPS: Record<string, string> = {
+  title: 'Basics',
+  price: 'Basics',
+  listing_type: 'Basics',
+  property_type: 'Basics',
+  seller_type: 'Basics',
+  area: 'Details',
+  description: 'Details',
+  city: 'Location',
+  locality: 'Location',
+  pincode: 'Location',
+};
+
+/**
+ * §12 — readies a listing for the public.
+ *
+ * A seller's submission goes to `pending` for moderation. An admin's is
+ * published outright, because an admin is the moderator: queueing their own
+ * listing for their own approval is a round trip through a form that tells
+ * nobody anything. This is also what an admin posting on somebody's behalf
+ * needs — they have just typed the listing in from the owner's own words, and
+ * there is no second opinion to wait for.
+ *
+ * Publishing goes through `admin_approve_property` rather than an UPDATE, so
+ * the 90-day clock, `published_at` and the seller's "your property is live"
+ * notification are all set by the one routine that owns those side effects.
  */
 export async function submitPropertyForReview(
   propertyId: string,
@@ -168,9 +196,28 @@ export async function submitPropertyForReview(
 
   const parsed = submissionSchema.safeParse(property);
   if (!parsed.success) {
+    const fieldErrors = collectFieldErrors(parsed.error.issues);
+
+    /**
+     * Name what is missing and where.
+     *
+     * This used to be a bare "This listing is not ready to publish yet." with
+     * the field errors attached — which was useless from step 7, because the
+     * fields they belong to are three steps back and out of sight.
+     */
+    const missing = [
+      ...new Set(
+        Object.keys(fieldErrors).map((field) =>
+          FIELD_STEPS[field] ? `${field.replace(/_/g, ' ')} (${FIELD_STEPS[field]})` : field,
+        ),
+      ),
+    ];
+
     return fail(
-      'This listing is not ready to publish yet.',
-      collectFieldErrors(parsed.error.issues),
+      missing.length > 0
+        ? `Still needed before this can go live: ${missing.join(', ')}.`
+        : 'This listing is not ready to publish yet.',
+      fieldErrors,
     );
   }
 
@@ -183,6 +230,25 @@ export async function submitPropertyForReview(
     return fail(
       `Add at least ${photoRequirementLabel()} before submitting — listings with photos get far more enquiries.`,
     );
+  }
+
+  const profile = await getProfile();
+
+  if (profile?.role === 'admin') {
+    const { data, error } = await supabase.rpc('admin_approve_property', {
+      p_property_id: propertyId,
+    });
+    if (error) return fail(error.message);
+
+    const outcome = (data ?? {}) as { ok?: boolean; code?: string };
+    if (!outcome.ok) return fail(`Could not publish this listing (${outcome.code ?? 'unknown'}).`);
+
+    revalidatePath('/dashboard/properties');
+    revalidatePath('/admin/listings');
+    // It is publicly visible now, so the public surfaces change too.
+    revalidatePath('/properties');
+    revalidatePath('/');
+    return { ok: true, data: { status: 'published' } };
   }
 
   const { error } = await supabase
