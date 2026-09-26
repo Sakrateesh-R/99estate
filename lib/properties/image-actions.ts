@@ -1,34 +1,20 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
-import { getUser } from '@/lib/auth/session';
 import type { ActionResult } from '@/lib/properties/actions';
+/**
+ * Shared with the wizard's own actions. This file used to keep its own copy,
+ * which did not know that an admin may work on a listing they posted for
+ * somebody else — so the photos step refused them while every other step let
+ * them through. See lib/properties/ownership.ts.
+ */
+import { requirePropertyAccess as requireOwnership } from '@/lib/properties/ownership';
 import { MAX_IMAGE_BYTES, MAX_IMAGES_PER_PROPERTY } from '@/lib/properties/schema';
 
 const BUCKET = 'property-images';
 
 function fail(error: string): ActionResult<never> {
   return { ok: false, error };
-}
-
-async function requireOwnership(propertyId: string) {
-  const deny = (error: string) => ({ ok: false as const, error });
-
-  const user = await getUser();
-  if (!user) return deny('Your session expired. Please sign in again.');
-
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from('properties')
-    .select('id, seller_id')
-    .eq('id', propertyId)
-    .maybeSingle();
-
-  if (!data) return deny('That listing no longer exists.');
-  if (data.seller_id !== user.id) return deny('You can only edit your own listings.');
-
-  return { ok: true as const, supabase, user };
 }
 
 export type RegisteredImage = {

@@ -660,6 +660,7 @@ async function main() {
         await admin.from('profiles').update({ role: 'admin' }).eq('id', testUserId);
         let unreachable;
         let posted;
+        let photoAsAdmin;
         try {
           /**
            * The owner has a name but no mobile yet, so `profile_is_complete`
@@ -681,6 +682,25 @@ async function main() {
             .insert({ seller_id: ownerId, posted_by: testUserId, ...listing })
             .select('id, seller_id, posted_by')
             .maybeSingle();
+
+          /**
+           * A listing cannot be submitted without three photos, so an admin who
+           * can create one but not attach an image to it has been handed half a
+           * feature. This was exactly the bug: `property_images_write` allows
+           * admins, but the app kept a second private ownership check that did
+           * not.
+           */
+          if (posted.data?.id) {
+            photoAsAdmin = await user
+              .from('property_images')
+              .insert({
+                property_id: posted.data.id,
+                storage_path: `properties/${posted.data.id}/verify-${stamp}.jpg`,
+                public_url: `https://example.invalid/verify-${stamp}.jpg`,
+              })
+              .select('id')
+              .maybeSingle();
+          }
         } finally {
           await admin.from('profiles').update({ role: priorRole }).eq('id', testUserId);
         }
@@ -691,6 +711,24 @@ async function main() {
           posted.error?.message ?? JSON.stringify(posted.data));
         check('the listing records which admin posted it', posted.data?.posted_by === testUserId,
           posted.error?.message ?? `posted_by=${posted.data?.posted_by}`);
+
+        check('an admin can attach a photo to a listing they posted',
+          photoAsAdmin?.error === null && Boolean(photoAsAdmin?.data?.id),
+          photoAsAdmin?.error?.message ?? 'no row returned');
+
+        // And the allowance really is admin-only: the same insert from an
+        // ordinary user, now demoted, must be refused.
+        const photoAsUser = await user
+          .from('property_images')
+          .insert({
+            property_id: posted.data?.id,
+            storage_path: `properties/${posted.data?.id}/intruder-${stamp}.jpg`,
+            public_url: `https://example.invalid/intruder-${stamp}.jpg`,
+          })
+          .select('id');
+        check('an ordinary user cannot attach a photo to a listing that is not theirs',
+          photoAsUser.error !== null,
+          photoAsUser.error ? photoAsUser.error.code : 'INSERT WAS ALLOWED');
 
         // The seller owns it, not the platform — so it behaves like any listing.
         const asSeller = await admin

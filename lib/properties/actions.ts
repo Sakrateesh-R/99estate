@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { getUser, getProfile } from '@/lib/auth/session';
+import { requirePropertyAccess as requireOwnedProperty } from '@/lib/properties/ownership';
 import {
   propertyDraftSchema,
   submissionSchema,
@@ -35,37 +36,6 @@ function collectFieldErrors(issues: z.ZodIssue[]): Record<string, string> {
  * RLS enforces ownership independently, so this is about returning a helpful
  * message instead of an opaque "row not found" — not about being the gate.
  */
-async function requireOwnedProperty(propertyId: string) {
-  const deny = (error: string) => ({ ok: false as const, error });
-
-  const user = await getUser();
-  if (!user) return deny('Your session expired. Please sign in again.');
-
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from('properties')
-    .select('id, seller_id, status, slug, title')
-    .eq('id', propertyId)
-    .maybeSingle();
-
-  if (!data) return deny('That listing no longer exists.');
-
-  if (data.seller_id !== user.id) {
-    /**
-     * An admin finishing a listing they posted on a seller's behalf (§12) works
-     * through this same wizard, so this gate has to let them past.
-     *
-     * It grants nothing new: `properties_update_own` and the storage policies
-     * have always been `... or is_admin()`, and `properties_guard_write` waves
-     * admins through. Without this the admin would be stopped here by the one
-     * layer that was never the one enforcing ownership.
-     */
-    const profile = await getProfile();
-    if (profile?.role !== 'admin') return deny('You can only edit your own listings.');
-  }
-
-  return { ok: true as const, user, property: data, supabase };
-}
 
 // ---------------------------------------------------------------------------
 // Create / update the listing row
