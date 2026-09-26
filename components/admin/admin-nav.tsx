@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BadgeCheck, Building2, Flag, LayoutDashboard, Users } from 'lucide-react';
+import { BadgeCheck, Building2, Flag, Handshake, LayoutDashboard, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { QueueCounts } from '@/lib/admin/queries';
@@ -23,6 +23,7 @@ const ITEMS: {
 }[] = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
   { href: '/admin/properties', label: 'Listings', icon: Building2, count: (c) => c.pendingProperties },
+  { href: '/admin/listings', label: 'Posted on behalf', icon: Handshake },
   { href: '/admin/reports', label: 'Reports', icon: Flag, count: (c) => c.openReports },
   { href: '/admin/verification', label: 'Verification', icon: BadgeCheck, count: (c) => c.pendingVerifications },
   { href: '/admin/users', label: 'Users', icon: Users },

@@ -49,7 +49,20 @@ async function requireOwnedProperty(propertyId: string) {
     .maybeSingle();
 
   if (!data) return deny('That listing no longer exists.');
-  if (data.seller_id !== user.id) return deny('You can only edit your own listings.');
+
+  if (data.seller_id !== user.id) {
+    /**
+     * An admin finishing a listing they posted on a seller's behalf (§12) works
+     * through this same wizard, so this gate has to let them past.
+     *
+     * It grants nothing new: `properties_update_own` and the storage policies
+     * have always been `... or is_admin()`, and `properties_guard_write` waves
+     * admins through. Without this the admin would be stopped here by the one
+     * layer that was never the one enforcing ownership.
+     */
+    const profile = await getProfile();
+    if (profile?.role !== 'admin') return deny('You can only edit your own listings.');
+  }
 
   return { ok: true as const, user, property: data, supabase };
 }

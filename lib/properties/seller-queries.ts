@@ -113,19 +113,25 @@ export type PropertyEditData = {
   images: RegisteredImage[];
 };
 
-/** Everything the wizard needs to resume editing an existing listing. */
+/**
+ * Everything the wizard needs to resume editing an existing listing.
+ *
+ * `sellerId` of `null` drops the ownership filter, which is what an admin
+ * finishing a listing they posted on someone's behalf needs (§12). That is not
+ * a hole: `properties_select_own` is `seller_id = auth.uid() or is_admin()`, so
+ * a non-admin passing null still sees only their own rows. The filter is
+ * belt-and-braces for the ordinary path, not the thing enforcing it.
+ */
 export async function getPropertyForEdit(
   propertyId: string,
-  sellerId: string,
+  sellerId: string | null,
 ): Promise<PropertyEditData | null> {
   const supabase = await createClient();
 
-  const { data: property } = await supabase
-    .from('properties')
-    .select('*')
-    .eq('id', propertyId)
-    .eq('seller_id', sellerId)
-    .maybeSingle();
+  let query = supabase.from('properties').select('*').eq('id', propertyId);
+  if (sellerId) query = query.eq('seller_id', sellerId);
+
+  const { data: property } = await query.maybeSingle();
 
   if (!property) return null;
 

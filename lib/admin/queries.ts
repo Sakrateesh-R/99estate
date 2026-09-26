@@ -219,6 +219,144 @@ export type AdminUserRow = {
   created_at: string;
 };
 
+// --- Posted on behalf --------------------------------------------------------
+
+export type OnBehalfLead = {
+  id: string;
+  status: Enums<'lead_status'>;
+  created_at: string;
+  buyer_name: string | null;
+  buyer_mobile: string | null;
+};
+
+export type OnBehalfListing = {
+  id: string;
+  title: string;
+  slug: string | null;
+  status: Enums<'property_status'>;
+  listing_type: Enums<'listing_type'>;
+  price: number;
+  city: string;
+  created_at: string;
+  seller_id: string;
+  seller_name: string | null;
+  seller_mobile: string | null;
+  /** The seller cannot sign in, so their enquiries need relaying by hand. */
+  seller_is_placeholder: boolean;
+  posted_by_name: string | null;
+  leads: OnBehalfLead[];
+};
+
+/**
+ * §12 — every listing an admin created for somebody else, newest first.
+ *
+ * The enquiries come along with it rather than behind another click, because
+ * for a placeholder seller this page is the only place they exist: the buyer has
+ * paid for a connection to somebody who cannot read their own inbox, and
+ * somebody here has to pass it on.
+ *
+ * Reads `leads` directly rather than the `lead_details` view — that view pins
+ * itself to `auth.uid()` as the seller, which is right for a seller's own inbox
+ * and useless here.
+ */
+export const getOnBehalfListings = cache(async (): Promise<OnBehalfListing[]> => {
+  const supabase = await createClient();
+
+  const { data: properties } = await supabase
+    .from('properties')
+    .select('id, title, slug, status, listing_type, price, city, created_at, seller_id, posted_by')
+    .not('posted_by', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  const rows = (properties ?? []) as {
+    id: string;
+    title: string;
+    slug: string | null;
+    status: Enums<'property_status'>;
+    listing_type: Enums<'listing_type'>;
+    price: number;
+    city: string;
+    created_at: string;
+    seller_id: string;
+    posted_by: string | null;
+  }[];
+
+  if (rows.length === 0) return [];
+
+  const propertyIds = rows.map((r) => r.id);
+
+  const { data: leads } = await supabase
+    .from('leads')
+    .select('id, property_id, buyer_id, status, created_at')
+    .in('property_id', propertyIds)
+    .order('created_at', { ascending: false });
+
+  const leadRows = (leads ?? []) as {
+    id: string;
+    property_id: string;
+    buyer_id: string;
+    status: Enums<'lead_status'>;
+    created_at: string;
+  }[];
+
+  // One profile read for everybody involved: the sellers, the admins who posted,
+  // and the buyers behind the enquiries.
+  const peopleIds = [
+    ...new Set([
+      ...rows.map((r) => r.seller_id),
+      ...rows.map((r) => r.posted_by).filter((id): id is string => Boolean(id)),
+      ...leadRows.map((l) => l.buyer_id),
+    ]),
+  ];
+
+  const { data: people } = await supabase
+    .from('profiles')
+    .select('id, full_name, mobile_number, is_placeholder')
+    .in('id', peopleIds);
+
+  const byId = new Map(
+    (people ?? []).map((p) => [
+      p.id,
+      p as { id: string; full_name: string | null; mobile_number: string | null; is_placeholder: boolean },
+    ]),
+  );
+
+  const leadsByProperty = new Map<string, OnBehalfLead[]>();
+  for (const lead of leadRows) {
+    const buyer = byId.get(lead.buyer_id);
+    const list = leadsByProperty.get(lead.property_id) ?? [];
+    list.push({
+      id: lead.id,
+      status: lead.status,
+      created_at: lead.created_at,
+      buyer_name: buyer?.full_name ?? null,
+      buyer_mobile: buyer?.mobile_number ?? null,
+    });
+    leadsByProperty.set(lead.property_id, list);
+  }
+
+  return rows.map((row) => {
+    const seller = byId.get(row.seller_id);
+    return {
+      id: row.id,
+      title: row.title,
+      slug: row.slug,
+      status: row.status,
+      listing_type: row.listing_type,
+      price: row.price,
+      city: row.city,
+      created_at: row.created_at,
+      seller_id: row.seller_id,
+      seller_name: seller?.full_name ?? null,
+      seller_mobile: seller?.mobile_number ?? null,
+      seller_is_placeholder: seller?.is_placeholder ?? false,
+      posted_by_name: row.posted_by ? byId.get(row.posted_by)?.full_name ?? null : null,
+      leads: leadsByProperty.get(row.id) ?? [],
+    };
+  });
+});
+
 export const getUsers = cache(async (search: string): Promise<AdminUserRow[]> => {
   const supabase = await createClient();
 

@@ -217,6 +217,8 @@ export type Database = {
           role: Database['public']['Enums']['user_role'];
           account_status: Database['public']['Enums']['account_status'];
           is_profile_complete: boolean;
+          /** Admin-created record with no usable email: cannot sign in and claim itself. */
+          is_placeholder: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -227,6 +229,7 @@ export type Database = {
           mobile_number?: string | null;
           avatar_url?: string | null;
           role?: Database['public']['Enums']['user_role'];
+          is_placeholder?: boolean;
         };
         Update: {
           full_name?: string | null;
@@ -234,6 +237,8 @@ export type Database = {
           avatar_url?: string | null;
           role?: Database['public']['Enums']['user_role'];
           account_status?: Database['public']['Enums']['account_status'];
+          /** Pinned for non-admins by profiles_guard_placeholder. */
+          is_placeholder?: boolean;
         };
         Relationships: [
           { foreignKeyName: 'profiles_id_fkey'; columns: ['id']; referencedRelation: 'users'; referencedColumns: ['id'] },
@@ -272,6 +277,8 @@ export type Database = {
           latitude: number | null;
           longitude: number | null;
           seller_type: Database['public']['Enums']['user_role'];
+          /** The admin who listed this on the seller's behalf; NULL if self-posted. */
+          posted_by: string | null;
           status: Database['public']['Enums']['property_status'];
           verification_status: Database['public']['Enums']['verification_status'];
           is_featured: boolean;
@@ -318,6 +325,8 @@ export type Database = {
           latitude?: number | null;
           longitude?: number | null;
           status?: Database['public']['Enums']['property_status'];
+          /** Admin-only; pinned to NULL for everyone else by properties_guard_posted_by. */
+          posted_by?: string | null;
         };
         Update: Partial<Omit<Database['public']['Tables']['properties']['Insert'], 'seller_id'>>;
         Relationships: [

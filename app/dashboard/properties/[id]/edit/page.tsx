@@ -53,23 +53,44 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
   const { id } = await params;
   const profile = await requireCompleteProfile();
 
+  /**
+   * Admins skip the ownership filter so they can finish a listing they posted
+   * on a seller's behalf (§12) in the same wizard. RLS still decides what they
+   * can actually read.
+   */
+  const isAdmin = profile.role === 'admin';
+
   const [data, amenityOptions, cities] = await Promise.all([
-    getPropertyForEdit(id, profile.id),
+    getPropertyForEdit(id, isAdmin ? null : profile.id),
     getAmenityOptions(),
     getActiveCities(),
   ]);
 
   if (!data) notFound();
 
+  const onBehalf = isAdmin && data.property.seller_id !== profile.id;
+
   return (
     <div>
       <Link
-        href="/dashboard/properties"
+        href={onBehalf ? '/admin/listings' : '/dashboard/properties'}
         className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 transition-colors hover:text-ink-900"
       >
         <ArrowLeft className="size-4" aria-hidden />
-        Back to my properties
+        {onBehalf ? 'Listings posted on behalf' : 'Back to my properties'}
       </Link>
+
+      {onBehalf ? (
+        <p className="mt-4 rounded-card border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+          {/*
+            Worth saying plainly. Everything on this screen — the description,
+            the photos, the price — is published in somebody else's name, and
+            their phone number is what a buyer pays to reach.
+          */}
+          You are editing a listing that belongs to another account. It will be published under the
+          seller&rsquo;s name, and their number is what buyers unlock.
+        </p>
+      ) : null}
 
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">

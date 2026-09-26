@@ -596,6 +596,116 @@ async function main() {
         afterDemotion.error ? afterDemotion.error.code : 'STILL ALLOWED');
     }
 
+    // --- §12: an admin posts on behalf of an owner, agent or builder --------
+    //
+    // Requires migration 20260926090000_admin_posts_on_behalf.sql. Until that
+    // is applied these fail, which is the intended signal rather than a bug.
+    {
+      const behalfEmail = `behalf.${stamp}@99estate.dev`;
+      const { data: owner, error: ownerError } = await admin.auth.admin.createUser({
+        email: behalfEmail,
+        password: `Behalf!${stamp}`,
+        email_confirm: true,
+        user_metadata: { full_name: 'On Behalf Owner' },
+      });
+      if (ownerError) throw new Error(`create on-behalf owner: ${ownerError.message}`);
+      const ownerId = owner.user.id;
+
+      const listing = {
+        title: 'Listed by the platform on behalf of the owner',
+        property_type: 'apartment',
+        listing_type: 'sale',
+        price: 2500000,
+        city: 'Karur',
+        status: 'draft',
+      };
+
+      const before = await admin
+        .from('profiles').select('role').eq('id', testUserId).maybeSingle();
+      const priorRole = before.data?.role ?? 'buyer';
+
+      try {
+        // --- As an ordinary user, before any promotion ---------------------
+        const notMine = await user
+          .from('properties')
+          .insert({ seller_id: ownerId, ...listing })
+          .select('id');
+        check('ordinary user cannot post a listing for somebody else', notMine.error !== null,
+          notMine.error ? notMine.error.code : 'INSERT WAS ALLOWED');
+
+        /**
+         * The pin matters on its own: a seller who could set `posted_by` would
+         * be dressing their own listing up as one the platform placed for them,
+         * borrowing credibility it has not earned.
+         */
+        const forged = await user
+          .from('properties')
+          .insert({ seller_id: testUserId, posted_by: testUserId, ...listing })
+          .select('id, posted_by')
+          .maybeSingle();
+        check('a seller cannot mark their own listing as platform-posted',
+          forged.data?.posted_by === null,
+          forged.error?.message ?? `posted_by=${forged.data?.posted_by}`);
+
+        const flip = await user
+          .from('profiles')
+          .update({ is_placeholder: true })
+          .eq('id', testUserId)
+          .select('is_placeholder')
+          .maybeSingle();
+        check('a user cannot flip their own placeholder flag', flip.data?.is_placeholder === false,
+          flip.error?.message ?? `is_placeholder=${flip.data?.is_placeholder}`);
+
+        // --- As an admin ---------------------------------------------------
+        await admin.from('profiles').update({ role: 'admin' }).eq('id', testUserId);
+        let unreachable;
+        let posted;
+        try {
+          /**
+           * The owner has a name but no mobile yet, so `profile_is_complete`
+           * fails for them. This must be refused: the listing would sell a
+           * buyer a ₹9 unlock that discloses nothing.
+           */
+          unreachable = await user
+            .from('properties')
+            .insert({ seller_id: ownerId, posted_by: testUserId, ...listing })
+            .select('id');
+
+          await admin
+            .from('profiles')
+            .update({ mobile_number: '9000000197' })
+            .eq('id', ownerId);
+
+          posted = await user
+            .from('properties')
+            .insert({ seller_id: ownerId, posted_by: testUserId, ...listing })
+            .select('id, seller_id, posted_by')
+            .maybeSingle();
+        } finally {
+          await admin.from('profiles').update({ role: priorRole }).eq('id', testUserId);
+        }
+
+        check('admin cannot post for a seller with no reachable number', unreachable.error !== null,
+          unreachable.error ? unreachable.error.code : 'INSERT WAS ALLOWED');
+        check('admin can post a listing on a seller\'s behalf', posted.data?.seller_id === ownerId,
+          posted.error?.message ?? JSON.stringify(posted.data));
+        check('the listing records which admin posted it', posted.data?.posted_by === testUserId,
+          posted.error?.message ?? `posted_by=${posted.data?.posted_by}`);
+
+        // The seller owns it, not the platform — so it behaves like any listing.
+        const asSeller = await admin
+          .from('properties').select('seller_id, status, seller_type')
+          .eq('id', posted.data?.id).maybeSingle();
+        check('an on-behalf listing starts as a draft owned by the seller',
+          asSeller.data?.seller_id === ownerId && asSeller.data?.status === 'draft',
+          JSON.stringify(asSeller.data));
+      } finally {
+        // Cascades the on-behalf listing away with its owner.
+        await admin.auth.admin.deleteUser(ownerId);
+        await admin.from('profiles').update({ role: priorRole }).eq('id', testUserId);
+      }
+    }
+
     // --- Anonymous access ---------------------------------------------------
     const anon = createClient(url, anonKey, { auth: { persistSession: false } });
     const anonProps = await anon.from('properties').select('id').eq('status', 'published').limit(5);
