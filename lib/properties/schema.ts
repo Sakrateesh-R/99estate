@@ -217,8 +217,26 @@ export const amenitiesSchema = z.object({
   amenities: z.array(z.string().trim().min(2).max(60)).max(40),
 });
 
-/** Minimum photo count for a submission — listings without photos do not sell. */
-export const MIN_IMAGES_FOR_SUBMISSION = 3;
+/**
+ * Minimum photo count for a submission.
+ *
+ * One, not three. Three was the better listing — a flat with one photo converts
+ * poorly — but it was also a wall in front of sellers who had a single decent
+ * picture, and a listing that never gets posted converts worse than a thin one.
+ */
+export const MIN_IMAGES_FOR_SUBMISSION = 1;
+
+/**
+ * "one photo" / "3 photos".
+ *
+ * The requirement is stated in four places — the uploader, the submit button's
+ * hint, the wizard's last step and the Server Action that enforces it — so the
+ * phrasing lives here with the number. Changing the constant and leaving
+ * "at least 1 photos" in the copy is the obvious next bug otherwise.
+ */
+export function photoRequirementLabel(count = MIN_IMAGES_FOR_SUBMISSION): string {
+  return count === 1 ? 'one photo' : `${count} photos`;
+}
 
 export const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] as const;
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;

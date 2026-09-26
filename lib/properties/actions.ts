@@ -10,6 +10,7 @@ import {
   submissionSchema,
   amenitiesSchema,
   MIN_IMAGES_FOR_SUBMISSION,
+  photoRequirementLabel,
 } from '@/lib/properties/schema';
 import type { Enums } from '@/types/database.types';
 
@@ -180,7 +181,7 @@ export async function submitPropertyForReview(
 
   if ((count ?? 0) < MIN_IMAGES_FOR_SUBMISSION) {
     return fail(
-      `Add at least ${MIN_IMAGES_FOR_SUBMISSION} photos before submitting — listings with photos get far more enquiries.`,
+      `Add at least ${photoRequirementLabel()} before submitting — listings with photos get far more enquiries.`,
     );
   }
 

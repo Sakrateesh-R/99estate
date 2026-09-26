@@ -18,6 +18,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_IMAGES_PER_PROPERTY,
   MIN_IMAGES_FOR_SUBMISSION,
+  photoRequirementLabel,
 } from '@/lib/properties/schema';
 
 const BUCKET = 'property-images';
@@ -267,7 +268,7 @@ export function ImageUploader({
 
       {settledCount > 0 && settledCount < MIN_IMAGES_FOR_SUBMISSION ? (
         <p className="text-sm font-medium text-amber-700">
-          Add at least {MIN_IMAGES_FOR_SUBMISSION} photos before submitting — you have {settledCount}.
+          Add at least {photoRequirementLabel()} before submitting — you have {settledCount}.
         </p>
       ) : null}
 

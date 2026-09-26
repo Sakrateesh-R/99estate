@@ -27,6 +27,7 @@ import {
   detailsSchema,
   locationSchema,
   MIN_IMAGES_FOR_SUBMISSION,
+  photoRequirementLabel,
 } from '@/lib/properties/schema';
 import { LISTING_TYPE_LABELS } from '@/lib/constants';
 
@@ -319,7 +320,7 @@ export function PropertyWizard({
 
         {step === STEPS.length && needsMorePhotos ? (
           <p className="mt-3 text-sm font-medium text-amber-700">
-            Add at least {MIN_IMAGES_FOR_SUBMISSION} photos in step 5 before submitting.
+            Add at least {photoRequirementLabel()} in step 5 before submitting.
           </p>
         ) : null}
       </div>
