@@ -53,13 +53,23 @@ export function SearchFilters({
     setQuery(filters.q);
   }, [filters.q]);
 
+  /**
+   * Filter changes navigate inside a transition, so the results already on
+   * screen stay put while the new ones are fetched instead of the page dropping
+   * to its `loading.tsx` skeleton. Rebuilding the whole page for one ticked
+   * checkbox loses the reader's place for no gain.
+   */
+  const [isPending, startTransition] = React.useTransition();
+
   const commit = React.useCallback(
     (mutate: (params: URLSearchParams) => void) => {
       const params = new URLSearchParams(searchParams.toString());
       mutate(params);
       params.delete('page'); // any filter change resets to page 1
       const qs = params.toString();
-      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      startTransition(() => {
+        router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      });
     },
     [pathname, router, searchParams],
   );
@@ -336,7 +346,21 @@ export function SearchFilters({
           </div>
         </aside>
 
-        <div className="min-w-0">{children}</div>
+        {/*
+          The results pass through here, so this is the one place that can show
+          them going stale: they fade and stop taking clicks while the new set
+          loads, rather than sitting there looking current or vanishing into a
+          skeleton. `aria-busy` says the same thing to a screen reader.
+        */}
+        <div
+          className={cn(
+            'min-w-0 transition-opacity duration-200',
+            isPending && 'pointer-events-none opacity-60',
+          )}
+          aria-busy={isPending}
+        >
+          {children}
+        </div>
       </div>
 
       {/* ---- Mobile sheet ---- */}

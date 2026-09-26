@@ -1,8 +1,10 @@
 'use client';
 
+import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { LayoutGrid, Rows3, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Spinner } from '@/components/ui/spinner';
 import {
   FACING_LABELS,
   FURNISHING_LABELS,
@@ -36,13 +38,26 @@ export function ResultToolbar({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  /**
+   * Refinements navigate inside a transition.
+   *
+   * Two reasons. It gives `isPending`, so the toolbar can say the results are
+   * being fetched instead of leaving stale numbers sitting there looking
+   * current. And a transition keeps the existing results on screen rather than
+   * dropping to the route's `loading.tsx` skeleton — dropping a whole page of
+   * results to rebuild it for one removed filter chip is a worse answer than
+   * showing the old ones for a moment while they update.
+   */
+  const [isPending, startTransition] = React.useTransition();
 
   function commit(mutate: (params: URLSearchParams) => void, resetPage = true) {
     const params = new URLSearchParams(searchParams.toString());
     mutate(params);
     if (resetPage) params.delete('page');
     const qs = params.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    startTransition(() => {
+      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    });
   }
 
   const drop = (key: string) => (params: URLSearchParams) => params.delete(key);
@@ -107,8 +122,18 @@ export function ResultToolbar({
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-ink-600">
-          {total === 0 ? (
+        {/*
+          The count is where a change is confirmed or not, so it is also where
+          "not yet" belongs — announced politely so a screen reader hears the
+          result arrive rather than being interrupted mid-sentence.
+        */}
+        <p className="flex items-center gap-2 text-sm text-ink-600" aria-live="polite" aria-busy={isPending}>
+          {isPending ? (
+            <>
+              <Spinner className="size-3.5 text-brand-600" />
+              <span>Updating results…</span>
+            </>
+          ) : total === 0 ? (
             'No properties found'
           ) : (
             <>
