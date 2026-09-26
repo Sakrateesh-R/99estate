@@ -19,10 +19,22 @@ const DETAIL_COLUMNS = [
   'country', 'state', 'city', 'locality', 'pincode', 'latitude', 'longitude',
   'status', 'verification_status', 'seller_type', 'is_featured',
   'published_at', 'expires_at', 'views_count', 'saves_count',
-  'cover_image_url', 'created_at', 'updated_at',
+  'cover_image_url', 'video_url', 'created_at', 'updated_at',
 ].join(', ');
 
-export type PropertyDetail = Omit<Tables<'properties'>, 'address' | 'rejection_reason' | 'last_renewed_at' | 'unlocks_count' | 'leads_count'>;
+/**
+ * `posted_by` is omitted as well as unselected. It is internal provenance —
+ * which admin typed a listing in on a seller's behalf — and has no business on
+ * a page anybody can read.
+ *
+ * Both lists have to agree, because `.maybeSingle<PropertyDetail>()` asserts
+ * this shape rather than deriving it: a column named here but missing from
+ * DETAIL_COLUMNS arrives as `undefined` while TypeScript insists it is there.
+ */
+export type PropertyDetail = Omit<
+  Tables<'properties'>,
+  'address' | 'rejection_reason' | 'last_renewed_at' | 'unlocks_count' | 'leads_count' | 'posted_by'
+>;
 
 export type PropertyImage = {
   id: string;

@@ -277,6 +277,8 @@ export type Database = {
           latitude: number | null;
           longitude: number | null;
           seller_type: Database['public']['Enums']['user_role'];
+          /** Canonical YouTube/Vimeo URL; constrained by properties_video_url_check. */
+          video_url: string | null;
           /** The admin who listed this on the seller's behalf; NULL if self-posted. */
           posted_by: string | null;
           status: Database['public']['Enums']['property_status'];
@@ -325,6 +327,8 @@ export type Database = {
           latitude?: number | null;
           longitude?: number | null;
           status?: Database['public']['Enums']['property_status'];
+          /** Write only what lib/properties/video.ts canonicalises, or the CHECK rejects it. */
+          video_url?: string | null;
           /** Admin-only; pinned to NULL for everyone else by properties_guard_posted_by. */
           posted_by?: string | null;
         };

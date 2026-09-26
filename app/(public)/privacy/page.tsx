@@ -441,6 +441,21 @@ export default function PrivacyPage() {
         <p>
           Google independently processes information under Google’s own terms and privacy policies.
         </p>
+        <p className="font-semibold text-ink-900">Embedded video</p>
+        <p>
+          {/*
+            Stated because an embed is a disclosure the visitor did not ask for.
+            The nocookie host and lazy loading are what keep it to "when you
+            press play" rather than "when the page opens" — the policy should
+            describe the behaviour the code actually has.
+          */}
+          Where a seller has added a video tour, the listing page embeds a player from YouTube or
+          Vimeo. {SITE_NAME} does not host these videos. The player is loaded only as you scroll to
+          it, and we use YouTube’s no-cookie embed domain and Vimeo’s do-not-track parameter, so
+          those services should not set advertising or tracking cookies before you choose to play.
+          When you play a video, information such as your IP address and device details is processed
+          by that service under its own privacy policy.
+        </p>
       </Section>
 
       <Section n={15} title="Razorpay">

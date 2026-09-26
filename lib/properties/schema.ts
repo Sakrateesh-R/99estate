@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseVideoUrl } from '@/lib/properties/video';
 
 /**
  * Validation for the property posting form (§12).
@@ -155,7 +156,42 @@ export const locationSchema = z.object({
 });
 
 /** Everything required to create or update the listing row itself. */
-export const propertyDraftSchema = basicInfoSchema.merge(detailsSchema).merge(locationSchema);
+// ---------------------------------------------------------------------------
+// Step 5 — Media
+// ---------------------------------------------------------------------------
+/**
+ * The photos are rows in `property_images`, so the only field the media step
+ * contributes to the listing itself is the video link.
+ *
+ * Stored canonicalised rather than as typed: `parseVideoUrl` reduces whatever
+ * was pasted to a provider and an id and rebuilds the URL, because this value
+ * ends up in an `<iframe src>` and a string that merely *contains* a YouTube
+ * host is not the same as one that *is* a YouTube video.
+ */
+export const mediaSchema = z.object({
+  video_url: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z
+      .string()
+      .transform((raw, ctx) => {
+        const parsed = parseVideoUrl(raw);
+        if (!parsed) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Paste a YouTube or Vimeo link — other sites are not supported',
+          });
+          return z.NEVER;
+        }
+        return parsed.canonicalUrl;
+      })
+      .optional(),
+  ),
+});
+
+export const propertyDraftSchema = basicInfoSchema
+  .merge(detailsSchema)
+  .merge(locationSchema)
+  .merge(mediaSchema);
 
 export type PropertyDraftInput = z.input<typeof propertyDraftSchema>;
 export type PropertyDraft = z.output<typeof propertyDraftSchema>;

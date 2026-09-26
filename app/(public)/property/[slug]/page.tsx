@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { PropertyGallery } from '@/components/property/property-gallery';
+import { PropertyVideo } from '@/components/property/property-video';
 import { ContactUnlockCard } from '@/components/property/contact-unlock-card';
 import { SavePropertyButton } from '@/components/property/save-property-button';
 import { ReportPropertyDialog } from '@/components/property/report-property-dialog';
@@ -294,6 +295,10 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                 </p>
               </section>
             ) : null}
+
+            {/* After the description, before amenities: a buyer who has read
+                what it is wants to see it next. */}
+            <PropertyVideo videoUrl={property.video_url} />
 
             {amenities.length > 0 ? (
               <section className="mt-6 rounded-card border border-ink-200 bg-white p-5 sm:p-6">

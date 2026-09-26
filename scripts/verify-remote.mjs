@@ -706,6 +706,66 @@ async function main() {
       }
     }
 
+    // --- §12: the video link cannot be an arbitrary URL ---------------------
+    //
+    // Requires migration 20260926100000_property_video_tour.sql. The app
+    // canonicalises before writing (scripts/verify-video-urls.mts covers that
+    // parser); this checks the constraint that holds when something writes
+    // around the app, because the value lands in an `<iframe src>`.
+    {
+      const base = {
+        seller_id: testUserId,
+        title: 'Video constraint fixture listing',
+        property_type: 'apartment',
+        listing_type: 'sale',
+        price: 1500000,
+        city: 'Karur',
+        status: 'draft',
+      };
+
+      const good = await user
+        .from('properties')
+        .insert({ ...base, video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' })
+        .select('id, video_url')
+        .maybeSingle();
+      check('a canonical YouTube link is accepted',
+        good.data?.video_url === 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        good.error?.message ?? String(good.data?.video_url));
+
+      const vimeo = await user
+        .from('properties')
+        .insert({ ...base, video_url: 'https://vimeo.com/123456789' })
+        .select('video_url')
+        .maybeSingle();
+      check('a canonical Vimeo link is accepted', vimeo.data?.video_url === 'https://vimeo.com/123456789',
+        vimeo.error?.message ?? String(vimeo.data?.video_url));
+
+      /**
+       * Each of these would be an iframe pointing somewhere we did not choose.
+       * The service role is used deliberately — it bypasses RLS, so a failure
+       * here is the CHECK constraint refusing and nothing else.
+       */
+      const hostile = [
+        ['an unrelated host', 'https://evil.com/video'],
+        ['a look-alike host', 'https://youtube.com.evil.com/watch?v=dQw4w9WgXcQ'],
+        ['credentials in the authority', 'https://www.youtube.com@evil.com/watch?v=dQw4w9WgXcQ'],
+        ['a javascript: URL', 'javascript:alert(1)'],
+        ['a data: URL', 'data:text/html,<script>alert(1)</script>'],
+        ['a trailing query string', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&next=https://evil.com'],
+        ['a plain http scheme', 'http://www.youtube.com/watch?v=dQw4w9WgXcQ'],
+        ['a channel page', 'https://www.youtube.com/@somecreator'],
+      ];
+
+      for (const [label, value] of hostile) {
+        const attempt = await admin
+          .from('properties')
+          .insert({ ...base, video_url: value })
+          .select('id');
+        check(`the database rejects ${label} as a video link`, attempt.error !== null,
+          attempt.error ? attempt.error.code : 'INSERT WAS ALLOWED');
+      }
+    }
+
     // --- Anonymous access ---------------------------------------------------
     const anon = createClient(url, anonKey, { auth: { persistSession: false } });
     const anonProps = await anon.from('properties').select('id').eq('status', 'published').limit(5);

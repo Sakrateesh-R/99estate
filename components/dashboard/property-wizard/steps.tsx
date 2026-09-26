@@ -41,6 +41,7 @@ export type WizardValues = {
   address: string;
   latitude: string;
   longitude: string;
+  video_url: string;
 };
 
 export type StepProps = {

@@ -14,6 +14,7 @@ import {
   type WizardValues,
 } from '@/components/dashboard/property-wizard/steps';
 import { ImageUploader } from '@/components/dashboard/property-wizard/image-uploader';
+import { VideoField } from '@/components/dashboard/property-wizard/video-field';
 import { PreviewStep } from '@/components/dashboard/property-wizard/preview-step';
 import {
   savePropertyDraft,
@@ -69,6 +70,7 @@ export const EMPTY_WIZARD_VALUES: WizardValues = {
   address: '',
   latitude: '',
   longitude: '',
+  video_url: '',
 };
 
 export function PropertyWizard({
@@ -256,15 +258,27 @@ export function PropertyWizard({
             ) : null}
 
             {step === 5 ? (
-              propertyId ? (
-                <ImageUploader
-                  propertyId={propertyId}
-                  initialImages={initialImages}
-                  onCountChange={setImageCount}
+              <>
+                {propertyId ? (
+                  <ImageUploader
+                    propertyId={propertyId}
+                    initialImages={initialImages}
+                    onCountChange={setImageCount}
+                  />
+                ) : (
+                  <p className="text-sm text-ink-500">Save the location step first to add photos.</p>
+                )}
+                {/*
+                  Sits with the photos rather than in its own step: it is the
+                  same job — showing the place — and a step containing one
+                  optional field reads as more work than it is.
+                */}
+                <VideoField
+                  value={values.video_url}
+                  error={errors.video_url}
+                  onChange={(v) => set('video_url', v)}
                 />
-              ) : (
-                <p className="text-sm text-ink-500">Save the location step first to add photos.</p>
-              )
+              </>
             ) : null}
 
             {step === 6 ? (

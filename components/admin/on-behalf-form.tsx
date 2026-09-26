@@ -43,6 +43,7 @@ type FormValues = {
   price: string;
   city: string;
   locality: string;
+  video_url: string;
 };
 
 const EMPTY: FormValues = {
@@ -56,6 +57,7 @@ const EMPTY: FormValues = {
   price: '',
   city: '',
   locality: '',
+  video_url: '',
 };
 
 export function OnBehalfForm({ cities }: { cities: { city: string; state: string }[] }) {
@@ -371,6 +373,25 @@ export function OnBehalfForm({ cities }: { cities: { city: string; state: string
               name="locality"
               value={values.locality}
               onChange={(e) => set('locality', e.target.value)}
+            />
+          </Field>
+
+          <Field
+            label="Video tour link"
+            htmlFor="video_url"
+            error={fieldErrors.video_url}
+            hint="Optional. YouTube or Vimeo only — upload it to the 99Estate channel as unlisted and paste the link."
+            className="sm:col-span-2"
+          >
+            <Input
+              id="video_url"
+              name="video_url"
+              value={values.video_url}
+              onChange={(e) => set('video_url', e.target.value)}
+              placeholder="https://youtu.be/…"
+              inputMode="url"
+              autoComplete="off"
+              spellCheck={false}
             />
           </Field>
         </div>

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireAdmin } from '@/lib/auth/session';
-import { basicInfoSchema, locationSchema } from '@/lib/properties/schema';
+import { basicInfoSchema, locationSchema, mediaSchema } from '@/lib/properties/schema';
 import { isValidIndianMobile, normaliseMobile } from '@/lib/format';
 import type { ActionResult } from '@/lib/properties/actions';
 
@@ -78,7 +78,8 @@ const onBehalfSchema = ownerSchema
       price: true,
     }),
   )
-  .merge(locationSchema.pick({ city: true, locality: true }));
+  .merge(locationSchema.pick({ city: true, locality: true }))
+  .merge(mediaSchema);
 
 export type OnBehalfInput = z.input<typeof onBehalfSchema>;
 
@@ -219,6 +220,9 @@ export async function createListingOnBehalf(
       price: input.price,
       city: input.city,
       locality: input.locality,
+      // Already canonicalised by mediaSchema, so the CHECK constraint will
+      // accept it or the parse would have failed above.
+      video_url: input.video_url,
       // A draft, like any other new listing. The admin finishes it in the same
       // wizard a seller uses, and it goes through the same moderation queue —
       // posting on someone's behalf is not a way to skip review.
