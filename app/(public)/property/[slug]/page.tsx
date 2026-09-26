@@ -63,6 +63,19 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!data) return { title: 'Property not found', robots: { index: false, follow: false } };
 
   const { property, images } = data;
+
+  /**
+   * `/property/anything-at-all-<uuid>` also serves this listing, because the id
+   * is read off the end of the segment and the words before it are ignored. The
+   * `alternates.canonical` below is what collapses those duplicates.
+   *
+   * A 308 would be stronger, and is not available: the `(public)` layout streams
+   * its header behind Suspense, so the 200 is already sent before either this
+   * function or the page body could redirect — verified, both returned 200 with
+   * no Location header. Doing it properly means a middleware lookup on every
+   * property request, which is a poor trade against a canonical tag that already
+   * works. See SEO-AUDIT.md.
+   */
   const location = [property.locality, property.city].filter(Boolean).join(', ');
   const price = formatListingPrice(property.price, property.listing_type);
   const bhk = property.bedrooms ? `${property.bedrooms} BHK ` : '';
@@ -108,6 +121,9 @@ export default async function PropertyDetailPage({ params }: PageProps) {
   if (!data) notFound();
 
   const { property, images, amenities, seller, isSaved, isOwnListing } = data;
+
+  // The canonical-URL redirect lives in generateMetadata, which runs before the
+  // response streams; see the note there.
 
   const [contactState, unlockedAddress] = await Promise.all([
     getContactState(property.id),
