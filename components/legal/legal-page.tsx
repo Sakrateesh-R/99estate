@@ -67,9 +67,26 @@ export function List({ items }: { items: React.ReactNode[] }) {
 }
 
 /** Pulls a definition out of the body text where it carries legal weight. */
-export function Callout({ children }: { children: React.ReactNode }) {
+export function Callout({
+  children,
+  tone = 'neutral',
+}: {
+  children: React.ReactNode;
+  /**
+   * `warning` is for text about the document rather than in it — a notice that
+   * a clause is not yet in force, say. It has to look unlike the surrounding
+   * legal prose, or it reads as just another paragraph of it.
+   */
+  tone?: 'neutral' | 'warning';
+}) {
   return (
-    <div className="rounded-field border border-ink-200 bg-ink-50 p-4 text-sm leading-relaxed text-ink-700">
+    <div
+      className={
+        tone === 'warning'
+          ? 'rounded-field border border-amber-300 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900'
+          : 'rounded-field border border-ink-200 bg-ink-50 p-4 text-sm leading-relaxed text-ink-700'
+      }
+    >
       {children}
     </div>
   );
