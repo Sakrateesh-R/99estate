@@ -74,6 +74,28 @@ export const EMPTY_WIZARD_VALUES: WizardValues = {
   video_url: '',
 };
 
+/**
+ * Every key present and non-null, whatever arrived.
+ *
+ * `undefined` and `null` are both dropped in favour of the default: a plain
+ * spread would let an explicitly-undefined key overwrite a good default with
+ * nothing, which is the failure this exists to prevent.
+ */
+function withDefaults(initial: Partial<WizardValues> | null | undefined): WizardValues {
+  const merged: WizardValues = { ...EMPTY_WIZARD_VALUES };
+
+  for (const key of Object.keys(EMPTY_WIZARD_VALUES) as (keyof WizardValues)[]) {
+    const value = initial?.[key];
+    if (value !== undefined && value !== null) {
+      // Each key's type is its own; the cast is confined to this one assignment
+      // rather than widening the whole object.
+      (merged[key] as WizardValues[typeof key]) = value as WizardValues[typeof key];
+    }
+  }
+
+  return merged;
+}
+
 export function PropertyWizard({
   propertyId: initialPropertyId,
   initialValues,
@@ -100,7 +122,22 @@ export function PropertyWizard({
   const toast = useToast();
 
   const [step, setStep] = React.useState(1);
-  const [values, setValues] = React.useState<WizardValues>(initialValues);
+  /**
+   * Filled from EMPTY_WIZARD_VALUES rather than trusted as-is.
+   *
+   * Every field here is typed `string`, and the steps read them as strings —
+   * `values.description.length` for a character counter, and so on. But these
+   * props cross a server/client boundary, so "this key is a string" is a compile
+   * time claim about a runtime object. Production white-screened on exactly that:
+   * a missing `description` turned a hint into
+   * "Cannot read properties of undefined (reading 'length')", and the whole form
+   * went down for a character count.
+   *
+   * Merging over the defaults makes a missing or null key impossible for every
+   * step at once, instead of each field needing its own guard and one of them
+   * eventually being forgotten.
+   */
+  const [values, setValues] = React.useState<WizardValues>(() => withDefaults(initialValues));
   const [amenities, setAmenities] = React.useState<string[]>(initialAmenities);
   const [propertyId, setPropertyId] = React.useState<string | null>(initialPropertyId);
   const [imageCount, setImageCount] = React.useState(initialImages.length);

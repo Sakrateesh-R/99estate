@@ -359,7 +359,16 @@ export function DetailsStep({ values, errors, set }: StepProps) {
         label="Description"
         htmlFor="description"
         error={errors.description}
-        hint={`${values.description.length}/8000 · Mention the neighbourhood, what is nearby, and why someone would want to live here. At least 40 characters to submit.`}
+        /*
+          `?? ''` because this is a character counter, and a character counter
+          must not be able to take the form down. Production hit
+          "Cannot read properties of undefined (reading 'length')" here: the type
+          says `string`, but props cross a server/client boundary and a value
+          that arrives absent is a runtime fact the type cannot prevent. The
+          wizard now also fills any missing key from EMPTY_WIZARD_VALUES, so this
+          is the second of two guards rather than the only one.
+        */
+        hint={`${(values.description ?? '').length}/8000 · Mention the neighbourhood, what is nearby, and why someone would want to live here. At least 40 characters to submit.`}
       >
         <Textarea
           id="description"
