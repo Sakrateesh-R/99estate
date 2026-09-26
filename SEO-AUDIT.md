@@ -96,7 +96,7 @@ There was no `not-found.tsx` anywhere, so dead URLs rendered Next's unstyled def
 one line of text, no header, no way onward. Now a real page with `noindex, nofollow`
 and two concrete routes out.
 
-### SEO-3 · Every public URL returns 200 instead of 404 — **OPEN, regression**
+### SEO-3 · Every public URL returned 200 instead of 404 — **FIXED**
 
 **Severity: high.** `components/layout/site-header.tsx`, `app/(public)/layout.tsx`
 
@@ -120,18 +120,45 @@ Tested and ruled out: removing the `loading.tsx` files does not restore the 404,
 neither `notFound()` nor `permanentRedirect()` works from `generateMetadata` — both
 still returned 200.
 
-**Options, none free:**
+**Fix:** the status decision moved into `middleware.ts`, which runs before anything can
+stream. `lib/seo/routes.ts` answers "is this path provably dead?" with pure string logic
+and no database call, so it costs nothing — and it runs *before* the Supabase round trip
+in `updateSession`, so a scanner probing for `/wp-login.php` no longer triggers an auth
+call either.
 
-1. **Middleware** decides the status before rendering. Correct, and the only reliable
-   place in a streaming app. For unresolvable single-segment paths it needs no database
-   — `parseLandingSlug` is pure string logic — so typos, probes and stale links can be
-   404'd for free. The cost is that middleware cannot render React, so the body would
-   be plain HTML rather than the styled page.
-2. **Revert the header to blocking.** Restores correct statuses everywhere and costs
-   ~1s of TTFB on every page.
-3. **Leave it.** Google treats soft 404s as a site-quality signal. Not advisable.
+Two cases are provably dead and now 404:
 
-Recommendation: option 1, with the trade-off on the body being the user's call.
+- a single-segment path that is neither a known route nor a valid landing slug
+- `/property/…` with no listing id on the end
+
+Measured after the fix:
+
+```
+404:  /no-such-page   /wp-login.php   /random-garbage   /property/no-uuid-here
+200:  /  /properties  /about  /pricing  /privacy  /terms  /how-it-works
+      /robots.txt  /sitemap.xml  /icon.svg  /login  /account-suspended
+      every landing page, including empty ones
+      every real property page
+307:  /saved  /dashboard  /admin  /notifications  /complete-profile
+```
+
+The body is hand-written HTML rather than the styled React page, because middleware
+cannot render React. It is self-contained at 1.5 KB — no CSS file, no fonts, no
+JavaScript — so it cannot itself fail. Headers carry `X-Robots-Tag: noindex, nofollow`
+and `Cache-Control: no-store`, the latter because a path that 404s today becomes a real
+landing page the moment somebody lists a property there.
+
+**What is deliberately still left to the page.** A landing slug that is well-formed but
+names a city we do not cover, and a well-formed listing id that does not exist. Both need
+a database lookup to judge, and putting one in middleware would tax every request to the
+pages that matter most. Those remain soft 404s — a much smaller set than what was fixed,
+and they require somebody to have linked to a place or listing that never existed.
+
+**The route list is load-bearing, so it is guarded.** Middleware 404s single-segment
+paths it does not recognise, which means a new top-level route missing from
+`KNOWN_TOP_LEVEL` would start answering 404 in production and look like a routing bug.
+`scripts/verify-routes.mts` compares that set against `app/` on every `npm run check`
+and fails if they disagree in either direction.
 
 ### SEO-4 · One listing is reachable at unlimited URLs — **MITIGATED, not fixed**
 
@@ -206,10 +233,12 @@ the site is crawled.
 
 ## Priority order
 
-1. **SEO-3** — soft 404s. Highest remaining impact, and a regression to undo.
-2. **SEO-5** — expired-listing strategy, before the first expiry (~late Dec 2026).
-3. Add listings. At 3 published properties, inventory is the binding constraint on
+1. **SEO-5** — expired-listing strategy, before the first expiry (~late Dec 2026).
+   Highest remaining technical item.
+2. Add listings. At 3 published properties, inventory is the binding constraint on
    every SEO outcome, not technique. The architecture is ready for 10,000; it has 3.
-4. **SEO-8** — two or three genuinely useful guides, written by a person.
+3. **SEO-8** — two or three genuinely useful guides, written by a person.
+4. **SEO-4** — revisit the 308 only if Search Console reports duplicate property URLs
+   being indexed; the canonical should hold.
 5. Re-audit with real Search Console data. Phases 24, 32 and 33 are feedback loops and
    need data to run against; claiming otherwise would be guessing.

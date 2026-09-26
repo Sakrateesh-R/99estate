@@ -39,6 +39,24 @@ attempted in both the page body and `generateMetadata`; both returned 200 with n
 `Location` header, for the reason in SEO-3. The attempt was removed rather than left in
 place doing nothing, and the constraint is recorded in a comment beside the canonical.
 
+### 4. Soft 404s eliminated (SEO-3)
+
+Every invalid public URL returned `200` with a 404 body, because the `(public)` layout
+streams its header and the status is sent before the page runs. Google reads that as a
+site-quality signal rather than a missing page.
+
+The decision moved into `middleware.ts`, which runs before anything streams — and before
+the Supabase auth call, so a scanner probing for `/wp-login.php` no longer costs a round
+trip. `lib/seo/routes.ts` judges only what pure string logic can prove dead: a
+single-segment path that is neither a known route nor a valid landing slug, and
+`/property/…` with no id on the end. Anything uncertain renders as before, because a
+false 404 on a real page would be worse than the bug being fixed.
+
+Verified after: garbage 404s, and **every** real route, landing page and property page
+still answers as it did. `KNOWN_TOP_LEVEL` is guarded by `scripts/verify-routes.mts` in
+`npm run check`, so adding a route without listing it fails the build rather than silently
+404ing in production.
+
 ## Files
 
 | File | Change |
@@ -47,6 +65,11 @@ place doing nothing, and the constraint is recorded in a comment beside the cano
 | `app/sitemap.ts` | gates city, type and locality URLs on inventory |
 | `app/not-found.tsx` | **new** — real 404 |
 | `app/(public)/property/[slug]/page.tsx` | comment recording the canonical/308 constraint |
+| `middleware.ts` | 404s provably-dead paths before anything streams |
+| `lib/seo/routes.ts` | **new** — the is-this-dead judgement, no database call |
+| `lib/seo/route-segments.ts` | **new** — the known-route set, import-free so the guard can read it |
+| `scripts/verify-routes.mts` | **new** — fails `check` when the route set drifts from `app/` |
+| `package.json` | `verify:routes` wired into `check` |
 | `SEO-AUDIT.md` | **new** — findings, severities, status |
 | `SEO-IMPLEMENTATION-REPORT.md` | **new** — this file |
 
