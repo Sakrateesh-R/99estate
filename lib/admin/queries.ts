@@ -1,5 +1,6 @@
 import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
+import { EXPIRY_WARNING_DAYS } from '@/lib/constants';
 import type { Enums } from '@/types/database.types';
 
 /**
@@ -19,19 +20,42 @@ export type QueueCounts = {
   suspendedUsers: number;
   totalUsers: number;
   liveProperties: number;
+  /**
+   * Published listings already past `expires_at` (§18). Anything above zero
+   * means the scheduled sweep is not reaching the database — the whole point of
+   * surfacing it is that a silent cron failure looks exactly like nothing
+   * happening.
+   */
+  overdueProperties: number;
+  /** Published listings due to expire within the warning window. */
+  expiringSoon: number;
 };
 
 export const getQueueCounts = cache(async (): Promise<QueueCounts> => {
   const supabase = await createClient();
 
+  const now = new Date();
+  const horizon = new Date(now.getTime() + EXPIRY_WARNING_DAYS * 24 * 60 * 60 * 1000);
+
   // `head: true` so each of these is a COUNT and never ships rows.
-  const [pending, reports, verifications, suspended, users, live] = await Promise.all([
+  const [pending, reports, verifications, suspended, users, live, overdue, soon] = await Promise.all([
     supabase.from('properties').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('property_reports').select('*', { count: 'exact', head: true }).in('status', ['open', 'under_review']),
     supabase.from('verification_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('account_status', 'suspended'),
     supabase.from('profiles').select('*', { count: 'exact', head: true }),
     supabase.from('properties').select('*', { count: 'exact', head: true }).eq('status', 'published'),
+    supabase
+      .from('properties')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'published')
+      .lte('expires_at', now.toISOString()),
+    supabase
+      .from('properties')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'published')
+      .gt('expires_at', now.toISOString())
+      .lte('expires_at', horizon.toISOString()),
   ]);
 
   return {
@@ -41,6 +65,8 @@ export const getQueueCounts = cache(async (): Promise<QueueCounts> => {
     suspendedUsers: suspended.count ?? 0,
     totalUsers: users.count ?? 0,
     liveProperties: live.count ?? 0,
+    overdueProperties: overdue.count ?? 0,
+    expiringSoon: soon.count ?? 0,
   };
 });
 

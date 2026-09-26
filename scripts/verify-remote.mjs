@@ -531,6 +531,71 @@ async function main() {
         removed.error?.message ?? String(removed.data?.id));
     }
 
+    // --- §18: the lifecycle sweep is not a public button --------------------
+    {
+      /**
+       * Both are granted to `authenticated` so the admin console can call them
+       * with the signed-in admin's own client, and both re-check `is_admin()`
+       * internally. An ordinary user reaching them would be able to expire
+       * other people's listings and spray notifications at every seller.
+       */
+      const sweep = await user.rpc('expire_stale_properties');
+      check('ordinary user cannot run the expiry sweep', sweep.error?.code === '42501',
+        sweep.error ? sweep.error.code : 'SWEEP WAS ALLOWED');
+
+      const warn = await user.rpc('notify_expiring_properties', { p_days_ahead: 7 });
+      check('ordinary user cannot send expiry warnings', warn.error?.code === '42501',
+        warn.error ? warn.error.code : 'WARNINGS WERE ALLOWED');
+
+      // The service role is how the scheduled route runs it, so that path has
+      // to work — and it must be safe to run when nothing is due.
+      const asService = await admin.rpc('expire_stale_properties');
+      check('service role can run the expiry sweep', asService.error === null && typeof asService.data === 'number',
+        asService.error?.message ?? `returned ${JSON.stringify(asService.data)}`);
+
+      const repeat = await admin.rpc('expire_stale_properties');
+      check('re-running the sweep expires nothing further', repeat.data === 0,
+        repeat.error?.message ?? String(repeat.data));
+
+      /**
+       * The console's "Run the sweep now" button calls these with the admin's
+       * own client, not the service role, so `is_admin()` has to be enough on
+       * its own — otherwise the button is dead on arrival.
+       *
+       * `is_admin()` reads `profiles`, so promoting through the service role
+       * takes effect on the session already open. Demoted immediately, and the
+       * account is a throwaway that gets deleted either way.
+       */
+      const before = await admin
+        .from('profiles').select('role').eq('id', testUserId).maybeSingle();
+      const priorRole = before.data?.role ?? 'buyer';
+
+      await admin.from('profiles').update({ role: 'admin' }).eq('id', testUserId);
+      let asAdmin;
+      let asAdminWarn;
+      try {
+        asAdmin = await user.rpc('expire_stale_properties');
+        asAdminWarn = await user.rpc('notify_expiring_properties', { p_days_ahead: 7 });
+      } finally {
+        // Restored even if an assertion throws: a half-finished run must never
+        // leave an extra admin on a live project.
+        await admin.from('profiles').update({ role: priorRole }).eq('id', testUserId);
+      }
+
+      check('an admin can run the sweep with their own client',
+        asAdmin.error === null && typeof asAdmin.data === 'number',
+        asAdmin.error?.message ?? `returned ${JSON.stringify(asAdmin.data)}`);
+      check('an admin can send expiry warnings with their own client',
+        asAdminWarn.error === null && typeof asAdminWarn.data === 'number',
+        asAdminWarn.error?.message ?? `returned ${JSON.stringify(asAdminWarn.data)}`);
+
+      // And the demotion actually took, so the fixture cannot leave an admin
+      // behind if cleanup is ever skipped.
+      const afterDemotion = await user.rpc('expire_stale_properties');
+      check('revoking admin closes the sweep again', afterDemotion.error?.code === '42501',
+        afterDemotion.error ? afterDemotion.error.code : 'STILL ALLOWED');
+    }
+
     // --- Anonymous access ---------------------------------------------------
     const anon = createClient(url, anonKey, { auth: { persistSession: false } });
     const anonProps = await anon.from('properties').select('id').eq('status', 'published').limit(5);

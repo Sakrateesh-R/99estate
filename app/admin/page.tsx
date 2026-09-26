@@ -1,7 +1,9 @@
 import Link from 'next/link';
-import { BadgeCheck, Building2, CheckCircle2, Flag, UserX, Users } from 'lucide-react';
+import { BadgeCheck, Building2, CalendarClock, CheckCircle2, Flag, TriangleAlert, UserX, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { SweepButton } from '@/components/admin/sweep-button';
 import { getQueueCounts } from '@/lib/admin/queries';
+import { EXPIRY_WARNING_DAYS, LISTING_DURATION_DAYS } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
 /**
@@ -56,6 +58,40 @@ export default async function AdminOverviewPage() {
         {queues.map((q) => (
           <QueueCard key={q.href} {...q} />
         ))}
+      </div>
+
+      <h2 className="mt-10 text-sm font-semibold text-ink-900">Listing lifecycle</h2>
+      <div
+        className={cn(
+          'mt-3 rounded-card border bg-white p-4',
+          c.overdueProperties > 0 ? 'border-amber-300' : 'border-ink-200',
+        )}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-sm font-medium text-ink-900">
+              {c.overdueProperties > 0 ? (
+                <TriangleAlert className="size-4 text-amber-600" aria-hidden />
+              ) : (
+                <CalendarClock className="size-4 text-ink-400" aria-hidden />
+              )}
+              {c.overdueProperties > 0
+                ? `${c.overdueProperties} live listing${c.overdueProperties === 1 ? ' is' : 's are'} past the ${LISTING_DURATION_DAYS}-day limit`
+                : `No listing is past the ${LISTING_DURATION_DAYS}-day limit`}
+            </p>
+            <p className="mt-1 text-xs text-ink-500">
+              {/*
+                A number above zero here is the tell that the scheduler is not
+                reaching the database. Said plainly, because a cron that has
+                quietly stopped looks identical to a quiet week.
+              */}
+              {c.overdueProperties > 0
+                ? 'The nightly sweep runs at 00:00 IST. If this number persists, CRON_SECRET or the schedule needs checking.'
+                : `The nightly sweep runs at 00:00 IST. ${c.expiringSoon} listing${c.expiringSoon === 1 ? '' : 's'} expire within ${EXPIRY_WARNING_DAYS} days.`}
+            </p>
+          </div>
+          <SweepButton />
+        </div>
       </div>
 
       <h2 className="mt-10 text-sm font-semibold text-ink-900">Platform</h2>

@@ -62,6 +62,15 @@ const serverSchema = z.object({
   PAYMENT_PROVIDER_KEY: z.string().optional(),
   PAYMENT_PROVIDER_SECRET: z.string().optional(),
   PAYMENT_WEBHOOK_SECRET: z.string().optional(),
+  /**
+   * Bearer token for /api/cron/listings (§18).
+   *
+   * Optional so local development of everything else works without it, but the
+   * route refuses to run when it is missing rather than falling open. A short
+   * value is rejected outright: this is the only thing standing between a
+   * stranger and the ability to notify every seller on the platform at will.
+   */
+  CRON_SECRET: z.string().min(24, 'CRON_SECRET must be at least 24 characters').optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;
@@ -80,22 +89,22 @@ export type ServerEnv = z.infer<typeof serverSchema>;
  * the two disagree, one of them is stale — say so rather than quietly picking
  * a side, since the losing value is invisible from the outside.
  */
-function pick(primary: string, alias: string): string | undefined {
-  /**
-   * Blank counts as absent, and the value is trimmed.
-   *
-   * Both come from how these get entered rather than how they are read. A
-   * dashboard will happily store an empty string, and `??` treats that as a
-   * real value — so a defined-but-blank variable would shadow the alias and
-   * report itself as configured. Pasting a key tends to bring a trailing
-   * newline with it, which survives into the Basic auth header and the HMAC
-   * and fails authentication for no visible reason.
-   */
-  const read = (name: string) => {
-    const value = process.env[name]?.trim();
-    return value ? value : undefined;
-  };
+/**
+ * Blank counts as absent, and the value is trimmed.
+ *
+ * Both come from how these get entered rather than how they are read. A
+ * dashboard will happily store an empty string, and `??` treats that as a real
+ * value — so a defined-but-blank variable would shadow an alias and report
+ * itself as configured. Pasting a key tends to bring a trailing newline with
+ * it, which survives into the Basic auth header, the HMAC or a bearer token and
+ * fails authentication for no visible reason.
+ */
+function read(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
 
+function pick(primary: string, alias: string): string | undefined {
   const a = read(primary);
   const b = read(alias);
 
@@ -127,6 +136,7 @@ export function getServerEnv(): ServerEnv {
     PAYMENT_PROVIDER_KEY: pick('PAYMENT_PROVIDER_KEY', 'RAZORPAY_KEY_ID'),
     PAYMENT_PROVIDER_SECRET: pick('PAYMENT_PROVIDER_SECRET', 'RAZORPAY_KEY_SECRET'),
     PAYMENT_WEBHOOK_SECRET: pick('PAYMENT_WEBHOOK_SECRET', 'RAZORPAY_WEBHOOK_SECRET'),
+    CRON_SECRET: read('CRON_SECRET'),
   });
 
   if (!parsed.success) {

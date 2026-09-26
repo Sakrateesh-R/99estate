@@ -36,6 +36,15 @@ export const FREE_DAILY_UNLOCKS = 2;
 export const PAID_UNLOCK_PRICE = 9;
 export const LISTING_DURATION_DAYS = 90;
 
+/**
+ * How far ahead of expiry a seller is warned (§18).
+ *
+ * Seven days because renewing is one click but noticing is not: a listing that
+ * dies silently takes the seller's enquiries with it, and the first they would
+ * otherwise know is the traffic stopping.
+ */
+export const EXPIRY_WARNING_DAYS = 7;
+
 export const PROPERTY_TYPE_LABELS: Record<Enums<'property_type'>, string> = {
   apartment: 'Apartment',
   independent_house: 'Independent House',

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/auth/session';
+import { runListingMaintenance, type MaintenanceResult } from '@/lib/properties/maintenance';
 import type { ActionResult } from '@/lib/properties/actions';
 import type { Enums } from '@/types/database.types';
 
@@ -200,4 +201,36 @@ export async function setAccountStatus(
 
   revalidateAdmin();
   return { ok: true, data: undefined };
+}
+
+// --- Listing lifecycle -------------------------------------------------------
+
+/**
+ * §18 — run the expiry sweep now, from the console.
+ *
+ * The scheduler at /api/cron/listings is what keeps the lifecycle running; this
+ * is for the times that is not enough — verifying the sweep works at all,
+ * catching up after the cron was misconfigured, or clearing a backlog without
+ * waiting for 00:00 IST.
+ *
+ * Runs as the signed-in admin, not the service role. `is_admin()` already
+ * satisfies both RPCs, so borrowing a key that bypasses RLS to do what the
+ * caller can already do would widen the blast radius for nothing.
+ */
+export async function sweepExpiredListings(): Promise<ActionResult<MaintenanceResult>> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  let result: MaintenanceResult;
+  try {
+    result = await runListingMaintenance(supabase);
+  } catch (cause) {
+    return fail(cause instanceof Error ? cause.message : 'The sweep could not be completed.');
+  }
+
+  revalidateAdmin();
+  // Expiring a listing removes it from search, so the public surfaces change.
+  revalidatePath('/properties');
+  revalidatePath('/');
+  return { ok: true, data: result };
 }
