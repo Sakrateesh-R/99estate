@@ -169,22 +169,30 @@ export const locationSchema = z.object({
  * host is not the same as one that *is* a YouTube video.
  */
 export const mediaSchema = z.object({
+  /**
+   * Optional, and optional all the way down: an unrecognised link is dropped
+   * rather than raised as an error.
+   *
+   * It used to fail validation, which meant one unparseable character in a
+   * field nobody has to fill stopped the whole draft from saving — the title,
+   * the price, the description, everything. An optional field that can block
+   * the rest of the form is not optional in any sense the person filling it in
+   * would recognise.
+   *
+   * Nothing is lost quietly: the field warns, live and in place, that a link it
+   * cannot read will not be kept. And the column's CHECK constraint still means
+   * only a canonical YouTube or Vimeo URL can ever reach the database, so being
+   * lenient here cannot put a bad value in it.
+   */
+  /**
+   * `null` rather than `undefined` when there is no usable link, because these
+   * values go straight into an UPDATE and supabase-js omits undefined keys. With
+   * `undefined`, emptying the box would leave the old video on the listing and
+   * there would be no way to take one off.
+   */
   video_url: z.preprocess(
-    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
-    z
-      .string()
-      .transform((raw, ctx) => {
-        const parsed = parseVideoUrl(raw);
-        if (!parsed) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'Paste a YouTube or Vimeo link — other sites are not supported',
-          });
-          return z.NEVER;
-        }
-        return parsed.canonicalUrl;
-      })
-      .optional(),
+    (value) => (typeof value === 'string' ? (parseVideoUrl(value)?.canonicalUrl ?? null) : null),
+    z.string().nullable(),
   ),
 });
 

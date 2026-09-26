@@ -37,11 +37,22 @@ export function VideoField({
       </p>
 
       <Field
-        label="YouTube or Vimeo link"
+        label="YouTube or Vimeo link — optional"
         htmlFor="video_url"
         className="mt-4 max-w-xl"
-        error={error ?? (touched && !parsed ? 'That is not a YouTube or Vimeo link.' : undefined)}
-        hint="Nothing is uploaded to 99Estate — the video stays on your own channel."
+        /*
+          Says what will happen rather than only that the link is wrong. The
+          value is dropped instead of blocking the save, so somebody who leaves
+          an unreadable link in the box and moves on needs to know it did not
+          come with them.
+        */
+        error={
+          error ??
+          (touched && !parsed
+            ? 'This does not look like a YouTube or Vimeo link, so it will not be saved. You can leave it blank.'
+            : undefined)
+        }
+        hint="Leave blank if there is no video. Nothing is uploaded to 99Estate — it stays on your own channel."
       >
         <Input
           id="video_url"

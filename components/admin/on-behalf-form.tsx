@@ -377,10 +377,10 @@ export function OnBehalfForm({ cities }: { cities: { city: string; state: string
           </Field>
 
           <Field
-            label="Video tour link"
+            label="Video tour link — optional"
             htmlFor="video_url"
             error={fieldErrors.video_url}
-            hint="Optional. YouTube or Vimeo only — upload it to the 99Estate channel as unlisted and paste the link."
+            hint="Leave blank if there is no video. YouTube or Vimeo only — anything else is ignored rather than saved."
             className="sm:col-span-2"
           >
             <Input
