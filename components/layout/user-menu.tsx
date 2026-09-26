@@ -3,7 +3,17 @@
 import * as React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ChevronDown, Heart, Inbox, LayoutDashboard, LogOut, Shield, User2, Building2 } from 'lucide-react';
+import {
+  Bell,
+  Building2,
+  ChevronDown,
+  Heart,
+  Inbox,
+  LayoutDashboard,
+  LogOut,
+  Shield,
+  User2,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { signOut } from '@/lib/auth/actions';
 
@@ -18,6 +28,7 @@ const ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/properties', label: 'My properties', icon: Building2 },
   { href: '/dashboard/leads', label: 'Enquiries', icon: Inbox },
+  { href: '/notifications', label: 'Notifications', icon: Bell },
   { href: '/saved', label: 'Saved', icon: Heart },
   { href: '/dashboard/profile', label: 'Profile', icon: User2 },
 ];

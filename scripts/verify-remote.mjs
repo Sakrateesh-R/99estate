@@ -444,6 +444,93 @@ async function main() {
       void sellerEmail;
     }
 
+    // --- §19: a notification is the platform's word, not the reader's -------
+    {
+      /**
+       * Inserted with the service role, because that is the only way this
+       * table is ever written: `create_notification` is SECURITY DEFINER and
+       * revoked from `authenticated`, and there is no insert policy at all.
+       */
+      const fixture = await admin
+        .from('notifications')
+        .insert({
+          user_id: testUserId,
+          title: 'Verification notice',
+          message: 'Created by the verification suite.',
+          type: 'system',
+          link: '/dashboard',
+        })
+        .select('id')
+        .maybeSingle();
+      if (fixture.error) throw new Error(`create notification fixture: ${fixture.error.message}`);
+      const notificationId = fixture.data.id;
+
+      const own = await user.from('notifications').select('id, user_id, is_read');
+      check(
+        'recipient can read their own notifications',
+        (own.data ?? []).some((n) => n.id === notificationId),
+        own.error?.message ?? `rows=${own.data?.length ?? 0}`,
+      );
+      check(
+        "recipient sees nobody else's notifications",
+        (own.data ?? []).every((n) => n.user_id === testUserId),
+        `rows=${own.data?.length ?? 0}`,
+      );
+
+      const read = await user
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notificationId)
+        .select('is_read')
+        .maybeSingle();
+      check('recipient can mark a notification read', read.data?.is_read === true,
+        read.error?.message ?? String(read.data?.is_read));
+
+      /**
+       * `notifications_guard_write` copies every field but `is_read` back from
+       * the old row, so this update is allowed to run and simply changes
+       * nothing. It matters: a recipient who could rewrite "Listing needs
+       * changes" into "Payment successful" would hold a screenshot worth
+       * showing somebody.
+       */
+      const rewritten = await user
+        .from('notifications')
+        .update({ title: 'Payment successful', message: 'Forged', link: '/', type: 'payment' })
+        .eq('id', notificationId)
+        .select('title, message, link, type')
+        .maybeSingle();
+      check(
+        'recipient cannot rewrite what a notification says',
+        rewritten.data?.title === 'Verification notice' &&
+          rewritten.data?.message === 'Created by the verification suite.' &&
+          rewritten.data?.link === '/dashboard' &&
+          rewritten.data?.type === 'system',
+        rewritten.error?.message ?? JSON.stringify(rewritten.data),
+      );
+
+      const forged = await user
+        .from('notifications')
+        .insert({ user_id: testUserId, title: 'You have been paid', type: 'payment' })
+        .select('id');
+      check('recipient cannot create a notification', forged.error !== null,
+        forged.error ? forged.error.code : 'INSERT WAS ALLOWED');
+
+      const anonNotifications = createClient(url, anonKey, { auth: { persistSession: false } });
+      const anonRead = await anonNotifications.from('notifications').select('id').limit(5);
+      check('anonymous visitors cannot read notifications', (anonRead.data ?? []).length === 0,
+        `rows=${anonRead.data?.length ?? 0}`);
+
+      // Their own copy, so dismissing it is theirs to do.
+      const removed = await user
+        .from('notifications')
+        .delete()
+        .eq('id', notificationId)
+        .select('id')
+        .maybeSingle();
+      check('recipient can dismiss a notification', removed.data?.id === notificationId,
+        removed.error?.message ?? String(removed.data?.id));
+    }
+
     // --- Anonymous access ---------------------------------------------------
     const anon = createClient(url, anonKey, { auth: { persistSession: false } });
     const anonProps = await anon.from('properties').select('id').eq('status', 'published').limit(5);

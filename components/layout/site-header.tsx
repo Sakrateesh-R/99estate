@@ -3,12 +3,14 @@ import { Suspense } from 'react';
 import { Heart, Plus, Sparkles } from 'lucide-react';
 import { Logo } from '@/components/layout/logo';
 import { UserMenu } from '@/components/layout/user-menu';
+import { NotificationBell } from '@/components/layout/notification-bell';
 import { MobileNav, type NavLink } from '@/components/layout/mobile-nav';
 import { HeaderSearch } from '@/components/layout/header-search';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { ButtonLink } from '@/components/ui/button';
 import { getAuthContext } from '@/lib/auth/session';
 import { getDailyContactUsage, freeQuotaLabel } from '@/lib/contacts/usage';
+import { getNotificationInbox } from '@/lib/notifications/queries';
 import { getActiveCities } from '@/lib/properties/queries';
 import { FREE_DAILY_UNLOCKS, PAID_UNLOCK_PRICE } from '@/lib/constants';
 
@@ -35,9 +37,12 @@ const SECONDARY_LINKS: NavLink[] = [
  */
 export async function SiteHeader() {
   const { user, profile } = await getAuthContext();
-  const [usage, cities] = await Promise.all([
+  const [usage, cities, inbox] = await Promise.all([
     user ? getDailyContactUsage() : Promise.resolve(null),
     getActiveCities(),
+    // Signed-out visitors have no inbox, and asking would be a round trip that
+    // can only ever come back empty.
+    user ? getNotificationInbox() : Promise.resolve(null),
   ]);
 
   const authSlot = user ? (
@@ -101,6 +106,11 @@ export async function SiteHeader() {
               <Heart className="size-5" />
             </Link>
           ) : null}
+
+          {/* Shown at every width, unlike the saved-properties shortcut: an
+              unread approval or enquiry is news, and news should not be
+              something only desktop users find out about. */}
+          {inbox ? <NotificationBell items={inbox.items} unread={inbox.unread} /> : null}
 
           <ButtonLink href="/dashboard/properties/new" size="sm" className="hidden sm:inline-flex">
             <Plus className="size-4" aria-hidden />
