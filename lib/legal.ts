@@ -20,7 +20,7 @@ export const LEGAL = {
    * "Sakdha" as an entity that could be sued on its own.
    */
   entityType: 'sole proprietorship',
-  proprietorName: 'Sakrateesh R',
+  proprietorName: 'Dharhsini M',
   registeredAddress: '282/9, Rasi Nagar, Chinna Andan Kovil Road, Karur, Tamil Nadu, India',
   /**
    * Empty by design. A proprietorship has no CIN or LLPIN, and registering for
@@ -30,7 +30,7 @@ export const LEGAL = {
   registrationNumber: '',
 
   /** IT Rules 2021 requires this person to be named publicly. */
-  grievanceOfficerName: 'Sakrateesh R',
+  grievanceOfficerName: 'Dharhsini M',
   grievanceOfficerEmail: 'sakdha20241@gmail.com',
 
   supportEmail: 'sakdha20241@gmail.com',

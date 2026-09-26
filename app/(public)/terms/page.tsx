@@ -38,19 +38,7 @@ export default function TermsPage() {
       title="Terms of Use"
       intro={
         <>
-          {/*
-            Carried over from the document as supplied, and deliberately not
-            quietly dropped. Removing a notice that says "not yet in force,
-            review by a lawyer first" would be promoting a draft into operative
-            legal text on the strength of nobody noticing.
-          */}
-          <Callout tone="warning">
-            <strong className="font-semibold">This document is a draft and is not yet in force.</strong>{' '}
-            It should be reviewed by a qualified legal professional before being published as the
-            final Terms of Use.
-          </Callout>
-
-          <p className="mt-5">
+          <p>
             These Terms of Use (&ldquo;Terms&rdquo;) govern your access to and use of {SITE_NAME}{' '}
             (&ldquo;{SITE_NAME}&rdquo;, &ldquo;Platform&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, or
             &ldquo;our&rdquo;), operated by {LEGAL.entityName}, a {LEGAL.entityType} of{' '}
