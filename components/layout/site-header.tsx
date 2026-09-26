@@ -62,7 +62,7 @@ export function SiteHeader() {
 
       {/* ---- Tier 1: identity, nav, account ---- */}
       <div className="container-page flex h-16 items-center gap-3">
-        <Logo />
+        <Logo priority />
 
         <nav className="ml-3 hidden items-center gap-0.5 lg:flex" aria-label="Primary">
           {PRIMARY_LINKS.map((link) => (

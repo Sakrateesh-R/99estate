@@ -1,21 +1,42 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
 /**
- * 99Estate mark: a roofline over a key-slot aperture. Reads as "property" at
- * 24px and still holds together as a favicon.
+ * The brand assets, cut from one master by `scripts/generate-logo.mjs`.
+ *
+ * Both are served through `next/image`, which resizes them and converts to
+ * WebP/AVIF on the way out — the sources are large PNGs so that they stay sharp
+ * on a high-density screen, and nothing ever downloads them at full size.
+ *
+ * Intrinsic dimensions are declared on every use. They are what reserves the
+ * space before the bytes arrive, and a logo that pops into a collapsed header is
+ * one of the easier ways to fail Cumulative Layout Shift on every page at once.
+ */
+
+/** Natural size of `public/logo.png`, the trimmed lockup. */
+const LOCKUP = { width: 1821, height: 422 };
+/** Natural size of the square 99 mark. */
+const MARK = { width: 574, height: 574 };
+
+/**
+ * The 99 mark alone.
+ *
+ * For places too small or too square for the full lockup — the footer, and
+ * anywhere the wordmark would be set beside other text and compete with it.
  */
 export function LogoMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" className={cn('size-8', className)} role="img" aria-label="99Estate">
-      <rect width="32" height="32" rx="9" className="fill-brand-700" />
-      <path
-        d="M16 7.4 25.2 15a.9.9 0 0 1-.57 1.6H23.1v6.9a1.5 1.5 0 0 1-1.5 1.5h-11.2a1.5 1.5 0 0 1-1.5-1.5v-6.9H7.37A.9.9 0 0 1 6.8 15Z"
-        className="fill-brand-300"
-      />
-      <circle cx="16" cy="17.6" r="2.3" className="fill-brand-900" />
-      <path d="M14.85 19.2h2.3l-.5 4.1h-1.3Z" className="fill-brand-900" />
-    </svg>
+    <Image
+      src="/logo-mark.png"
+      alt=""
+      width={MARK.width}
+      height={MARK.height}
+      className={cn('size-8 w-auto', className)}
+      // Decorative wherever it appears: every use sits next to the site name in
+      // text, so announcing it again would only repeat that to a screen reader.
+      aria-hidden
+    />
   );
 }
 
@@ -23,24 +44,35 @@ export function Logo({
   className,
   href = '/',
   showWordmark = true,
+  priority = false,
 }: {
   className?: string;
   href?: string;
+  /** False renders the square mark instead of the full lockup. */
   showWordmark?: boolean;
+  /**
+   * Set on the header, where the logo is within the first viewport on every
+   * page and is often the largest element to paint.
+   */
+  priority?: boolean;
 }) {
   return (
-    <Link
-      href={href}
-      className={cn('inline-flex items-center gap-2.5 font-display', className)}
-      aria-label="99Estate home"
-    >
-      <LogoMark />
+    <Link href={href} className={cn('inline-flex items-center', className)} aria-label="99Estate home">
       {showWordmark ? (
-        <span className="text-[1.3125rem] font-bold leading-none tracking-tight">
-          <span className="text-brand-700">99</span>
-          <span className="text-ink-950">Estate</span>
-        </span>
-      ) : null}
+        <Image
+          src="/logo.png"
+          alt="99Estate — buy, sell, rent, explore"
+          width={LOCKUP.width}
+          height={LOCKUP.height}
+          priority={priority}
+          // Height-led, width auto: the lockup is 4.3:1, so constraining the
+          // height is what keeps it aligned with everything else on the row.
+          className="h-9 w-auto sm:h-10"
+          sizes="(max-width: 640px) 160px, 190px"
+        />
+      ) : (
+        <LogoMark />
+      )}
     </Link>
   );
 }
