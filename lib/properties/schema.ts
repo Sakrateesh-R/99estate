@@ -67,7 +67,21 @@ function optionalNumber(min: number, max: number, message: string) {
 
 function optionalText(max: number) {
   return z.preprocess(
-    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    /**
+     * `null` counts as absent, not as a value.
+     *
+     * These schemas parse two different shapes. From the form an empty field
+     * arrives as `''`; from a database row an empty column arrives as `null`,
+     * and `submissionSchema` parses exactly that — the row read back before
+     * publishing. Only `''` was handled, so `null` fell through to
+     * `z.string().optional()`, which rejects it.
+     *
+     * The effect was that no seller who left the address, state or PIN code
+     * blank could publish at all: they were told "state, pincode, address" were
+     * still needed, for fields the form itself marks optional. `optionalNumber`
+     * and `optionalEnum` both already did this; this one was the odd one out.
+     */
+    (value) => (value === null || (typeof value === 'string' && value.trim() === '') ? undefined : value),
     z.string().trim().max(max).optional(),
   );
 }
@@ -144,7 +158,9 @@ export const locationSchema = z.object({
   city: z.string().trim().min(2, 'Enter the city').max(80, 'City name is too long'),
   locality: optionalText(120),
   pincode: z.preprocess(
-    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    // `null` as well as `''`, for the same reason as `optionalText`: this schema
+    // also parses a database row, where an empty column is null.
+    (v) => (v === null || (typeof v === 'string' && v.trim() === '') ? undefined : v),
     z
       .string()
       .regex(/^[1-9][0-9]{5}$/, 'Enter a valid 6-digit PIN code')
