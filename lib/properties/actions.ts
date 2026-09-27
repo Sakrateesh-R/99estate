@@ -165,20 +165,24 @@ const FIELD_STEPS: Record<string, string> = {
 };
 
 /**
- * §12 — readies a listing for the public.
+ * §12 — publishes a listing.
  *
- * A seller's submission goes to `pending` for moderation. An admin's is
- * published outright, because an admin is the moderator: queueing their own
- * listing for their own approval is a round trip through a form that tells
- * nobody anything. This is also what an admin posting on somebody's behalf
- * needs — they have just typed the listing in from the owner's own words, and
- * there is no second opinion to wait for.
+ * There is no review queue. A seller who finishes a listing puts it live, and
+ * it is in search immediately.
  *
- * Publishing goes through `admin_approve_property` rather than an UPDATE, so
- * the 90-day clock, `published_at` and the seller's "your property is live"
- * notification are all set by the one routine that owns those side effects.
+ * What still stands between a bad listing and the public is what was doing the
+ * work anyway: the submission schema below, which wants a description, an area
+ * and a locality; a photo; and the reports queue, which can take a live listing
+ * down afterwards. Approving in advance mostly delayed honest sellers, and the
+ * listings worth stopping are the ones that look fine until somebody complains.
+ *
+ * `status = 'published'` is set directly rather than through
+ * `admin_approve_property`, which requires `is_admin()`. The publication
+ * bookkeeping in `properties_guard_write` stamps `published_at` and the 90-day
+ * `expires_at` for every writer, so a self-published listing joins the expiry
+ * cycle exactly like an approved one used to.
  */
-export async function submitPropertyForReview(
+export async function publishProperty(
   propertyId: string,
 ): Promise<ActionResult<{ status: Enums<'property_status'> }>> {
   const owned = await requireOwnedProperty(propertyId);
@@ -228,38 +232,23 @@ export async function submitPropertyForReview(
 
   if ((count ?? 0) < MIN_IMAGES_FOR_SUBMISSION) {
     return fail(
-      `Add at least ${photoRequirementLabel()} before submitting — listings with photos get far more enquiries.`,
+      `Add at least ${photoRequirementLabel()} before publishing — listings with photos get far more enquiries.`,
     );
-  }
-
-  const profile = await getProfile();
-
-  if (profile?.role === 'admin') {
-    const { data, error } = await supabase.rpc('admin_approve_property', {
-      p_property_id: propertyId,
-    });
-    if (error) return fail(error.message);
-
-    const outcome = (data ?? {}) as { ok?: boolean; code?: string };
-    if (!outcome.ok) return fail(`Could not publish this listing (${outcome.code ?? 'unknown'}).`);
-
-    revalidatePath('/dashboard/properties');
-    revalidatePath('/admin/listings');
-    // It is publicly visible now, so the public surfaces change too.
-    revalidatePath('/properties');
-    revalidatePath('/');
-    return { ok: true, data: { status: 'published' } };
   }
 
   const { error } = await supabase
     .from('properties')
-    .update({ status: 'pending' })
+    .update({ status: 'published' })
     .eq('id', propertyId);
 
   if (error) return fail(error.message);
 
   revalidatePath('/dashboard/properties');
-  return { ok: true, data: { status: 'pending' } };
+  revalidatePath('/admin/listings');
+  // It is publicly visible now, so the public surfaces change too.
+  revalidatePath('/properties');
+  revalidatePath('/');
+  return { ok: true, data: { status: 'published' } };
 }
 
 // ---------------------------------------------------------------------------

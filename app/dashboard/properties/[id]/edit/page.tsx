@@ -99,7 +99,9 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
             {data.property.title}
           </h1>
           <p className="mt-1.5 text-[0.9375rem] text-ink-600">
-            Editing a live listing sends it back for a quick re-review.
+            {/* Edits used to demote a live listing to `pending`. They no longer
+                do, so saying so would be describing a queue that is gone. */}
+            Changes go live as soon as you save them.
           </p>
         </div>
         <PropertyStatusBadge status={data.property.status} />
@@ -120,7 +122,6 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
           initialImages={data.images}
           amenityOptions={amenityOptions}
           cities={cities}
-          publishesDirectly={isAdmin}
         />
       </div>
     </div>

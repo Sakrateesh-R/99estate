@@ -203,6 +203,31 @@ export async function setAccountStatus(
   return { ok: true, data: undefined };
 }
 
+/**
+ * Take a reported listing down and close the report in one go.
+ *
+ * Exists as its own action because of how Server Actions cross into Client
+ * Components: only a reference to an action, or the result of `.bind`, is
+ * serialisable. An inline `async (reason) => { ... }` that chained these two
+ * calls looked fine and threw at runtime with "Event handlers cannot be passed
+ * to Client Component props" — which is the bug that took the moderation queue
+ * down. Composition belongs on this side of the boundary.
+ */
+export async function takeDownReportedListing(
+  reportId: string,
+  propertyId: string,
+  reason: string,
+): Promise<ActionResult> {
+  await requireAdmin();
+
+  const removed = await rejectProperty(propertyId, reason);
+  if (!removed.ok) return removed;
+
+  // The same reason the seller was given, so the report and the notification
+  // cannot tell two different stories about why the listing went.
+  return resolveReport(reportId, 'resolved', reason);
+}
+
 // --- Listing lifecycle -------------------------------------------------------
 
 /**

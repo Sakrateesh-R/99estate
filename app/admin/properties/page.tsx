@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { CheckCircle2, ImageIcon } from 'lucide-react';
 import { DecisionButtons } from '@/components/admin/decision-buttons';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Badge } from '@/components/ui/badge';
+
 import { getModerationQueue } from '@/lib/admin/queries';
 import { approveProperty, rejectProperty } from '@/lib/admin/actions';
 import { propertyPath } from '@/lib/utils';
@@ -14,23 +14,34 @@ import type { Enums } from '@/types/database.types';
 
 type PageProps = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
+/**
+ * Live first, because this is no longer a queue.
+ *
+ * `pending` is kept as a tab only to reach listings stranded there by the old
+ * review flow — nothing new can land in it now that sellers publish directly.
+ * It can go once the last one is cleared.
+ */
 const TABS: { key: Enums<'property_status'>; label: string }[] = [
-  { key: 'pending', label: 'Awaiting review' },
-  { key: 'rejected', label: 'Rejected' },
   { key: 'published', label: 'Live' },
+  { key: 'rejected', label: 'Taken down' },
+  { key: 'pending', label: 'Stranded in review' },
 ];
 
 /**
- * §16 — the listing moderation queue.
+ * §16 — every listing, and the ability to take one down.
  *
- * A reviewer needs enough to judge without opening the listing: the photo,
- * the price, where it is, and how long it has been waiting. The full page is
- * one click away for anything that needs a closer look.
+ * Approval before publication is gone; sellers publish directly. What an admin
+ * still needs is the other direction — a listing that turns out to be fake,
+ * duplicated or misleading has to come off the market, and a listing taken down
+ * by mistake has to go back on.
+ *
+ * Enough to judge without opening the listing: the photo, the price, where it
+ * is, and how long it has been up. The full page is one click away.
  */
 export default async function AdminPropertiesPage({ searchParams }: PageProps) {
   const raw = (await searchParams).status;
-  const requested = (Array.isArray(raw) ? raw[0] : raw) ?? 'pending';
-  const status = (TABS.find((t) => t.key === requested)?.key ?? 'pending') as Enums<'property_status'>;
+  const requested = (Array.isArray(raw) ? raw[0] : raw) ?? 'published';
+  const status = (TABS.find((t) => t.key === requested)?.key ?? 'published') as Enums<'property_status'>;
 
   const rows = await getModerationQueue(status);
 
@@ -58,11 +69,19 @@ export default async function AdminPropertiesPage({ searchParams }: PageProps) {
         <EmptyState
           className="mt-6"
           icon={<CheckCircle2 className="size-6" />}
-          title={status === 'pending' ? 'Nothing awaiting review' : 'Nothing here'}
+          title={
+            status === 'published'
+              ? 'No live listings yet'
+              : status === 'rejected'
+                ? 'Nothing has been taken down'
+                : 'Nothing stranded'
+          }
           description={
-            status === 'pending'
-              ? 'Listings submitted by sellers appear here for approval.'
-              : 'No listings with this status.'
+            status === 'published'
+              ? 'Listings appear here as soon as sellers publish them.'
+              : status === 'rejected'
+                ? 'Listings you unpublish appear here, and can be restored.'
+                : 'Nothing is left over from the old review queue.'
           }
         />
       ) : (
@@ -123,25 +142,35 @@ export default async function AdminPropertiesPage({ searchParams }: PageProps) {
                     </p>
                   ) : null}
 
+                  {/*
+                    Both handlers are bound Server Actions. An arrow function
+                    here is what crashed this page: only an action reference or
+                    the result of `.bind` survives the crossing into a Client
+                    Component, and a closure throws "Event handlers cannot be
+                    passed to Client Component props" the moment a row renders.
+                    `onApprove` used `.bind` and was fine; `onReject` did not.
+                  */}
                   <div className="mt-3">
-                    {status === 'pending' ? (
+                    {status === 'published' ? (
                       <DecisionButtons
                         onApprove={approveProperty.bind(null, row.id)}
-                        onReject={(reason) => rejectProperty(row.id, reason)}
-                        approveLabel="Approve and publish"
-                        approveToast="Listing is live"
+                        onReject={rejectProperty.bind(null, row.id)}
+                        approveLabel="Renew for 90 days"
+                        rejectLabel="Take down"
+                        reasonLabel="Reason the seller will see"
+                        reasonPlaceholder="Duplicate of an existing listing, price looks wrong…"
+                        approveToast="Renewed"
+                        rejectToast="Listing taken down"
                       />
-                    ) : status === 'rejected' ? (
+                    ) : (
                       <DecisionButtons
                         onApprove={approveProperty.bind(null, row.id)}
-                        onReject={(reason) => rejectProperty(row.id, reason)}
-                        approveLabel="Approve anyway"
+                        onReject={rejectProperty.bind(null, row.id)}
+                        approveLabel={status === 'rejected' ? 'Restore and publish' : 'Publish'}
                         rejectLabel="Update reason"
                         approveToast="Listing is live"
                         rejectToast="Reason updated"
                       />
-                    ) : (
-                      <Badge tone="success">Live</Badge>
                     )}
                   </div>
                 </div>

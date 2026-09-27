@@ -19,7 +19,7 @@ import { PreviewStep } from '@/components/dashboard/property-wizard/preview-step
 import {
   savePropertyDraft,
   setPropertyAmenities,
-  submitPropertyForReview,
+  publishProperty,
 } from '@/lib/properties/actions';
 import type { RegisteredImage } from '@/lib/properties/image-actions';
 import {
@@ -38,7 +38,7 @@ const STEPS = [
   { id: 4, label: 'Amenities', hint: 'What it comes with' },
   { id: 5, label: 'Photos', hint: 'Show it off' },
   { id: 6, label: 'Preview', hint: 'How buyers see it' },
-  { id: 7, label: 'Submit', hint: 'Send for review' },
+  { id: 7, label: 'Publish', hint: 'Put it live' },
 ] as const;
 
 /** The step at which the draft first hits the database — `city` is NOT NULL. */
@@ -103,7 +103,6 @@ export function PropertyWizard({
   initialImages,
   amenityOptions,
   cities,
-  publishesDirectly = false,
 }: {
   propertyId: string | null;
   initialValues: WizardValues;
@@ -111,12 +110,6 @@ export function PropertyWizard({
   initialImages: RegisteredImage[];
   amenityOptions: { name: string; category: string }[];
   cities: { city: string; state: string }[];
-  /**
-   * True for an admin, whose submission goes live immediately rather than into
-   * the moderation queue. Only changes what the screen promises — the server
-   * decides, from the session, which of the two actually happens.
-   */
-  publishesDirectly?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -247,28 +240,18 @@ export function PropertyWizard({
       const id = await persist();
       if (!id) return;
 
-      const result = await submitPropertyForReview(id);
+      const result = await publishProperty(id);
       if (!result.ok) {
         setErrors(result.fieldErrors ?? {});
         toast({ tone: 'error', title: 'Not ready to submit', description: result.error });
         return;
       }
 
-      // An admin's listing is published outright rather than queued, so the
-      // confirmation has to describe what actually happened.
-      toast(
-        result.data.status === 'published'
-          ? {
-              tone: 'success',
-              title: 'Published',
-              description: 'It is live in search now, for the next 90 days.',
-            }
-          : {
-              tone: 'success',
-              title: 'Submitted for review',
-              description: 'We will let you know as soon as it goes live.',
-            },
-      );
+      toast({
+        tone: 'success',
+        title: 'Published',
+        description: 'It is live in search now, for the next 90 days.',
+      });
       router.push('/dashboard/properties');
       router.refresh();
     } finally {
@@ -341,11 +324,7 @@ export function PropertyWizard({
             ) : null}
 
             {step === 7 ? (
-              <SubmitStep
-                values={values}
-                imageCount={imageCount}
-                publishesDirectly={publishesDirectly}
-              />
+              <SubmitStep values={values} imageCount={imageCount} />
             ) : null}
           </div>
         </div>
@@ -366,7 +345,7 @@ export function PropertyWizard({
           ) : (
             <Button onClick={submit} loading={busy} disabled={needsMorePhotos} size="lg">
               <SendHorizonal className="size-4" aria-hidden />
-              {publishesDirectly ? 'Publish now' : 'Submit for review'}
+              Publish listing
             </Button>
           )}
 
@@ -395,7 +374,7 @@ const STEP_TITLES = [
   'Amenities',
   'Photos',
   'Preview your listing',
-  'Ready to submit',
+  'Ready to publish',
 ];
 
 const STEP_BLURBS = [
@@ -477,38 +456,19 @@ function StepRail({ step, onSelect }: { step: number; onSelect: (target: number)
   );
 }
 
-function SubmitStep({
-  values,
-  imageCount,
-  publishesDirectly,
-}: {
-  values: WizardValues;
-  imageCount: number;
-  publishesDirectly: boolean;
-}) {
+function SubmitStep({ values, imageCount }: { values: WizardValues; imageCount: number }) {
   return (
     <div className="space-y-5">
       <div className="rounded-field border border-brand-200 bg-brand-50/60 p-5">
         <h3 className="text-sm font-semibold text-brand-900">What happens next</h3>
         <ol className="mt-3 space-y-2.5 text-sm text-ink-700">
-          {/* An admin is the reviewer, so promising them a review would be
-              describing a queue they are standing on the other side of. */}
-          {publishesDirectly ? (
-            <li className="flex gap-2.5">
-              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-600" aria-hidden />
-              This publishes immediately — no review queue, because you are the reviewer.
-            </li>
-          ) : (
-            <li className="flex gap-2.5">
-              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-600" aria-hidden />
-              Our team reviews the listing — usually within a few hours.
-            </li>
-          )}
           <li className="flex gap-2.5">
             <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-600" aria-hidden />
-            {publishesDirectly
-              ? 'It goes live for 90 days and appears in search straight away.'
-              : 'Once approved it goes live for 90 days and appears in search.'}
+            Your listing goes live immediately — there is no review queue.
+          </li>
+          <li className="flex gap-2.5">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-600" aria-hidden />
+            It stays in search for 90 days, and you can renew it after that.
           </li>
           <li className="flex gap-2.5">
             <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-600" aria-hidden />

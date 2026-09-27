@@ -134,10 +134,8 @@ export default async function AdminVerificationPage({ searchParams }: PageProps)
                 {!showDecided ? (
                   <div className="mt-3">
                     <DecisionButtons
-                      onApprove={() => setVerification(request.property_id, 'verified')}
-                      onReject={(reason) =>
-                        setVerification(request.property_id, 'rejected', reason)
-                      }
+                      onApprove={setVerification.bind(null, request.property_id, 'verified')}
+                      onReject={setVerification.bind(null, request.property_id, 'rejected')}
                       approveLabel="Verify listing"
                       rejectLabel="Reject"
                       reasonLabel="Why the documents were not accepted"

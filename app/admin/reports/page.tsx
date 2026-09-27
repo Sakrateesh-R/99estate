@@ -4,7 +4,7 @@ import { DecisionButtons } from '@/components/admin/decision-buttons';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { getReports } from '@/lib/admin/queries';
-import { resolveReport, rejectProperty } from '@/lib/admin/actions';
+import { resolveReport, takeDownReportedListing } from '@/lib/admin/actions';
 import { propertyPath, cn } from '@/lib/utils';
 import { formatRelative } from '@/lib/format';
 import { REPORT_REASON_LABELS } from '@/lib/constants';
@@ -120,9 +120,15 @@ export default async function AdminReportsPage({ searchParams }: PageProps) {
                 </p>
               ) : (
                 <div className="mt-3 space-y-3">
+                  {/*
+                    `.bind` rather than an arrow function. These props cross into
+                    a Client Component, and only an action reference or a bound
+                    action survives that — a closure throws "Event handlers
+                    cannot be passed to Client Component props" at render.
+                  */}
                   <DecisionButtons
-                    onApprove={() => resolveReport(report.id, 'dismissed')}
-                    onReject={(note) => resolveReport(report.id, 'resolved', note)}
+                    onApprove={resolveReport.bind(null, report.id, 'dismissed')}
+                    onReject={resolveReport.bind(null, report.id, 'resolved')}
                     approveLabel="Dismiss — listing is fine"
                     rejectLabel="Mark resolved"
                     reasonLabel="What did you do about it?"
@@ -142,12 +148,12 @@ export default async function AdminReportsPage({ searchParams }: PageProps) {
                           This unpublishes the listing and notifies the seller with your reason.
                         </p>
                         <DecisionButtons
-                          onApprove={() => resolveReport(report.id, 'under_review')}
-                          onReject={async (reason) => {
-                            const removed = await rejectProperty(report.property_id, reason);
-                            if (!removed.ok) return removed;
-                            return resolveReport(report.id, 'resolved', reason);
-                          }}
+                          onApprove={resolveReport.bind(null, report.id, 'under_review')}
+                          onReject={takeDownReportedListing.bind(
+                            null,
+                            report.id,
+                            report.property_id,
+                          )}
                           approveLabel="Flag for review instead"
                           rejectLabel="Unpublish listing"
                           reasonLabel="Reason the seller will see"

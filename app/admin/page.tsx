@@ -18,11 +18,14 @@ export default async function AdminOverviewPage() {
 
   const queues = [
     {
-      href: '/admin/properties',
-      label: 'Listings awaiting review',
+      href: '/admin/properties?status=pending',
+      label: 'Stranded in review',
       value: c.pendingProperties,
       icon: Building2,
-      hint: 'Sellers are waiting to go live',
+      // Not a queue any more. Sellers publish directly, so anything here was
+      // submitted under the old flow and is sitting where nobody will look for
+      // it — publish or take down, then this card stays at zero forever.
+      hint: 'Left over from the old review flow — publish or take them down',
     },
     {
       href: '/admin/reports',
