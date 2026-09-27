@@ -779,6 +779,78 @@ async function main() {
       }
     }
 
+    // --- §12: a seller publishes without waiting for anybody ----------------
+    //
+    // Requires migration 20260927090000_publish_without_review.sql. This is the
+    // rule that changed, so it is the one worth holding down: the app now sets
+    // `status = 'published'` directly, and if the guard still refused the
+    // transition every seller would hit a 42501 at the last step of the wizard.
+    {
+      const draft = await user
+        .from('properties')
+        .insert({
+          seller_id: testUserId,
+          title: 'Self-published verification listing',
+          property_type: 'apartment',
+          listing_type: 'sale',
+          price: 3300000,
+          city: 'Karur',
+          status: 'draft',
+        })
+        .select('id, status')
+        .maybeSingle();
+
+      check('a seller can create their own draft', draft.data?.status === 'draft',
+        draft.error?.message ?? String(draft.data?.status));
+
+      const published = await user
+        .from('properties')
+        .update({ status: 'published' })
+        .eq('id', draft.data?.id)
+        .select('status, published_at, expires_at')
+        .maybeSingle();
+
+      check('a seller can publish it with no review queue',
+        published.data?.status === 'published',
+        published.error?.message ?? String(published.data?.status));
+
+      // The publication bookkeeping still runs for a self-published listing, so
+      // it joins the 90-day expiry cycle exactly like an approved one used to.
+      check('publishing still stamps the 90-day clock',
+        Boolean(published.data?.published_at) &&
+          new Date(published.data?.expires_at).getTime() > Date.now(),
+        JSON.stringify(published.data));
+
+      /**
+       * A material edit used to demote a live listing to `pending` to force
+       * re-approval. With no queue that would have taken it out of search with
+       * nothing able to put it back, so it must now stay published.
+       */
+      const edited = await user
+        .from('properties')
+        .update({ title: 'Self-published verification listing, edited', price: 3400000 })
+        .eq('id', draft.data?.id)
+        .select('status, title')
+        .maybeSingle();
+
+      check('editing a live listing leaves it live',
+        edited.data?.status === 'published',
+        edited.error?.message ?? `status=${edited.data?.status}`);
+
+      // The seller still owns only their own listings: publishing is now open,
+      // writing to somebody else's is not.
+      const notMine = await user
+        .from('properties')
+        .update({ status: 'published' })
+        .eq('id', properties[0].id)
+        .select('id');
+      check('a seller still cannot publish a listing that is not theirs',
+        (notMine.data ?? []).length === 0,
+        notMine.error ? notMine.error.code : `rows=${notMine.data?.length ?? 0}`);
+
+      await admin.from('properties').delete().eq('id', draft.data?.id);
+    }
+
     // --- §12: the video link cannot be an arbitrary URL ---------------------
     //
     // Requires migration 20260926100000_property_video_tour.sql. The app
