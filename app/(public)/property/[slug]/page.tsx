@@ -120,7 +120,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
   const data = await getPropertyDetail(ref);
   if (!data) notFound();
 
-  const { property, images, amenities, seller, isSaved, isOwnListing } = data;
+  const { property, images, amenities, seller, isSaved, isOwnListing, isManagedByViewer } = data;
 
   // The canonical-URL redirect lives in middleware, which runs before the
   // response streams; see the note in generateMetadata.
@@ -135,6 +135,17 @@ export default async function PropertyDetailPage({ params }: PageProps) {
   // now, during the render; `after()` receives a task that touches no request
   // API, because doing so once the response has gone throws.
   after(await prepareViewTracking(property.id));
+
+  /**
+   * Who gets the exact pin and the full address.
+   *
+   * A buyer who unlocked the contact, obviously — that is what they paid for.
+   * But also whoever is responsible for the listing. Hiding a seller's own
+   * location from them makes the map look broken, and for a listing entered on
+   * behalf of a placeholder owner the admin who typed it in is the only person
+   * who can ever check that the pin landed in the right place.
+   */
+  const showExactLocation = Boolean(unlockedAddress) || isManagedByViewer;
 
   const canonicalPath = propertyPath(property);
 
@@ -348,6 +359,12 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                   </p>
                   <p className="mt-1 text-sm text-ink-800">{unlockedAddress}</p>
                 </div>
+              ) : isManagedByViewer ? (
+                // Telling the seller they must unlock their own listing to see
+                // their own address reads as a bug. They have it in the editor.
+                <p className="mt-4 text-sm text-ink-500">
+                  Buyers see the full address once they unlock your contact.
+                </p>
               ) : (
                 <p className="mt-4 text-sm text-ink-500">
                   The exact address is shared once you unlock the seller&rsquo;s contact.
@@ -360,11 +377,12 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                   the rendered tree entirely for everybody else. */}
               <PropertyMap
                 point={
-                  unlockedAddress && property.latitude !== null && property.longitude !== null
+                  showExactLocation && property.latitude !== null && property.longitude !== null
                     ? { latitude: property.latitude, longitude: property.longitude }
                     : null
                 }
                 hasPin={property.latitude !== null && property.longitude !== null}
+                isManager={isManagedByViewer}
                 locality={property.locality}
                 city={property.city}
                 state={property.state}

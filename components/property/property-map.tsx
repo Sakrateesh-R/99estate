@@ -24,6 +24,7 @@ import { areaEmbedUrl, mapsLinkFor, pointEmbedUrl } from '@/lib/properties/map-l
 export function PropertyMap({
   point,
   hasPin,
+  isManager = false,
   locality,
   city,
   state,
@@ -41,6 +42,12 @@ export function PropertyMap({
   point: { latitude: number; longitude: number } | null;
   /** Whether a pin exists at all — a boolean says so without revealing it. */
   hasPin: boolean;
+  /**
+   * True when this viewer is the seller or the admin who posted it, so the
+   * caption can say who else sees the pin. Without that the owner cannot tell
+   * whether they are looking at the public view or their own.
+   */
+  isManager?: boolean;
   locality: string | null;
   city: string;
   state: string | null;
@@ -88,10 +95,14 @@ export function PropertyMap({
 
       <p className="mt-2 text-xs text-ink-400">
         {exact
-          ? 'The pin is where the seller placed it.'
+          ? isManager
+            ? 'Only you and buyers who unlock your contact see this pin. Everyone else sees the neighbourhood.'
+            : 'The pin is where the seller placed it.'
           : hasPin
             ? 'Showing the neighbourhood. The exact pin appears once you unlock the contact.'
-            : 'Showing the neighbourhood. This seller has not pinned an exact location.'}
+            : isManager
+              ? 'No exact pin yet. Add a Google Maps link when you edit this listing.'
+              : 'Showing the neighbourhood. This seller has not pinned an exact location.'}
       </p>
     </div>
   );

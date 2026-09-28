@@ -69,6 +69,8 @@ export type PropertyDetailData = {
   seller: PublicSeller | null;
   isSaved: boolean;
   isOwnListing: boolean;
+  /** Owner, or the admin who posted it for them. See the note where it is set. */
+  isManagedByViewer: boolean;
 };
 
 /**
@@ -80,17 +82,26 @@ export type PropertyDetailData = {
 export const getPropertyDetail = cache(async (ref: PropertyRef): Promise<PropertyDetailData | null> => {
   const supabase = await createClient();
 
-  // One query either way: the short code is the current URL form, the UUID is
-  // the one that shipped first and still has to resolve.
-  const { data: property } = await supabase
+  /**
+   * One query either way: the short code is the current URL form, the UUID is
+   * the one that shipped first and still has to resolve.
+   *
+   * `posted_by` is selected and then immediately destructured away. It is needed
+   * to answer "is this viewer the admin who typed this listing in", and it must
+   * not reach the page — `property` is returned whole, so anything left on it is
+   * serialised into a payload the public can read.
+   */
+  const { data: row } = await supabase
     .from('properties')
-    .select(DETAIL_COLUMNS)
+    .select(`${DETAIL_COLUMNS}, posted_by`)
     .eq(ref.kind === 'code' ? 'public_code' : 'id', ref.value)
-    .maybeSingle<PropertyDetail>();
+    .maybeSingle<PropertyDetail & { posted_by: string | null }>();
 
   // RLS has already decided visibility: a stranger simply gets nothing back
   // for a draft or expired listing, while the owner and admins still see it.
-  if (!property) return null;
+  if (!row) return null;
+
+  const { posted_by: postedBy, ...property } = row;
 
   const {
     data: { user },
@@ -141,6 +152,18 @@ export const getPropertyDetail = cache(async (ref: PropertyRef): Promise<Propert
       : null,
     isSaved: Boolean(saved.data),
     isOwnListing: user?.id === property.seller_id,
+    /**
+     * Whether this viewer is responsible for the listing rather than shopping
+     * for it — its owner, or the admin who entered it on their behalf.
+     *
+     * Separate from `isOwnListing` because that means "yours" and drives things
+     * like hiding the unlock card. This one answers "may you see the private
+     * parts of your own listing", which the admin who typed it in must, since
+     * for a placeholder owner they are the only person who ever can.
+     */
+    isManagedByViewer: Boolean(
+      user && (user.id === property.seller_id || (postedBy !== null && user.id === postedBy)),
+    ),
   };
 });
 
