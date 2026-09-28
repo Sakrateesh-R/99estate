@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Building2, Inbox, LayoutDashboard, Plus, User2 } from 'lucide-react';
+import { Building2, Inbox, LayoutDashboard, Plus, User2, KeyRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -10,6 +10,7 @@ const ITEMS: { href: string; label: string; icon: LucideIcon; exact?: boolean; b
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/properties', label: 'My properties', icon: Building2 },
   { href: '/dashboard/leads', label: 'Enquiries', icon: Inbox, badge: true },
+  { href: '/dashboard/contacts', label: 'Unlocked contacts', icon: KeyRound },
   { href: '/dashboard/properties/new', label: 'Add property', icon: Plus, exact: true },
   { href: '/dashboard/profile', label: 'Profile', icon: User2, exact: true },
 ];
