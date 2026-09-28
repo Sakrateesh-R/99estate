@@ -2,6 +2,7 @@ import { cache } from 'react';
 import { createHash } from 'node:crypto';
 import { headers } from 'next/headers';
 import { createClient, createDeferredClient } from '@/lib/supabase/server';
+import { getUser } from '@/lib/auth/session';
 import type { Enums, Tables } from '@/types/database.types';
 
 /**
@@ -140,10 +141,16 @@ export const getPropertyDetail = cache(async (propertyId: string): Promise<Prope
 export async function getUnlockedAddress(propertyId: string): Promise<string | null> {
   const supabase = await createClient();
 
+  const user = await getUser();
+  if (!user) return null;
+
   const { data: unlock } = await supabase
     .from('unlocked_seller_contacts')
     .select('contact_unlock_id')
     .eq('property_id', propertyId)
+    // Whose unlock, not just which listing — see the note in
+    // lib/contacts/unlocked.ts.
+    .eq('buyer_id', user.id)
     .maybeSingle();
 
   if (!unlock) return null;

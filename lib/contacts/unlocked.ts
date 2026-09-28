@@ -1,5 +1,6 @@
 import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
+import { getUser } from '@/lib/auth/session';
 import type { Enums } from '@/types/database.types';
 
 /**
@@ -10,10 +11,14 @@ import type { Enums } from '@/types/database.types';
  * was nowhere to find it again. `unlocked_seller_contacts` has held the data
  * since the schema went in and nothing read it.
  *
- * Every read goes through that view, never `profiles`. It pins itself to
- * `cu.user_id = auth.uid()` in its own WHERE clause, so a query here cannot
- * widen to somebody else's unlocks whatever it passes — which matters, because
- * the column it exposes is the one the entire paywall exists to protect.
+ * Every read goes through that view, never `profiles`, because the column it
+ * exposes is the one the entire paywall exists to protect.
+ *
+ * Its WHERE clause used to end `or public.is_admin()`, which made an unfiltered
+ * read return every buyer's purchased contacts to an admin — including on this
+ * page. Migration 019 removes that, and the reads below name the buyer anyway.
+ * Two independent answers to "is this yours?" is the right number for a phone
+ * number somebody paid for.
  */
 
 export type UnlockedContactRow = {
@@ -42,11 +47,20 @@ export type UnlockedContactRow = {
 export const getUnlockedContacts = cache(async (): Promise<UnlockedContactRow[]> => {
   const supabase = await createClient();
 
+  const user = await getUser();
+  if (!user) return [];
+
   const { data } = await supabase
     .from('unlocked_seller_contacts')
     .select(
       'contact_unlock_id, property_id, seller_name, seller_mobile, seller_avatar, seller_type, is_free, amount, unlocked_at',
     )
+    // Belt and braces. The view pins itself to auth.uid() as of migration 019,
+    // but it used to add `or is_admin()`, and that is precisely the sort of
+    // clause that gets re-added by someone solving a different problem. Saying
+    // whose contacts these are at the call site means this page cannot widen
+    // again without the change being visible right here.
+    .eq('buyer_id', user.id)
     .order('unlocked_at', { ascending: false })
     .limit(200);
 
@@ -109,6 +123,26 @@ export const getUnlockedContacts = cache(async (): Promise<UnlockedContactRow[]>
       unlockedAt: r.unlocked_at ?? new Date(0).toISOString(),
       property: byId.get(r.property_id!) ?? null,
     }));
+});
+
+/**
+ * Just how many, for the dashboard's entry point into the full list.
+ *
+ * A count rather than `getUnlockedContacts().length`, because the overview only
+ * needs the number and that function also reads every listing behind them.
+ */
+export const countUnlockedContacts = cache(async (): Promise<number> => {
+  const supabase = await createClient();
+
+  const user = await getUser();
+  if (!user) return 0;
+
+  const { count } = await supabase
+    .from('unlocked_seller_contacts')
+    .select('contact_unlock_id', { count: 'exact', head: true })
+    .eq('buyer_id', user.id);
+
+  return count ?? 0;
 });
 
 export type UnlockedSummary = {

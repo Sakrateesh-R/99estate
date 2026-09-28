@@ -151,6 +151,7 @@ export async function getCardMeta(propertyIds: string[]): Promise<CardMeta> {
       ? supabase
           .from('unlocked_seller_contacts')
           .select('property_id, seller_name, seller_mobile')
+          .eq('buyer_id', user.id)
           .in('property_id', propertyIds)
       : Promise.resolve({ data: null }),
   ]);

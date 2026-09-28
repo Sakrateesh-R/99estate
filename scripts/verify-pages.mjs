@@ -133,7 +133,106 @@ async function main() {
   }
 }
 
+/**
+ * The one invariant the whole business model rests on: a seller's number is
+ * visible to the buyer who unlocked it and to nobody else.
+ *
+ * Asserted through the front door for the same reason as the view checks above.
+ * It is here because it has already failed once: both personal views ended their
+ * WHERE clause with `or public.is_admin()`, and every caller filtered by
+ * property without naming a buyer, so an admin opening the contacts page read
+ * somebody else's purchased number. A database-only test cannot see that — the
+ * view returns the right rows to the right role when asked as that role, and the
+ * bug was that the page never asked.
+ *
+ * Sessions are minted with the admin API rather than by signing in, so this
+ * needs no passwords and changes nobody's credentials.
+ */
+async function checkContactIsolation() {
+  const ref = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname.split('.')[0];
+  const cookieFor = (session) => {
+    const value = 'base64-' + Buffer.from(JSON.stringify(session), 'utf8').toString('base64url');
+    const name = `sb-${ref}-auth-token`;
+    if (value.length <= 3180) return `${name}=${value}`;
+    const parts = [];
+    for (let i = 0, n = 0; i < value.length; i += 3180, n++) {
+      parts.push(`${name}.${n}=${value.slice(i, i + 3180)}`);
+    }
+    return parts.join('; ');
+  };
+
+  async function sessionFor(email) {
+    const { data: link, error } = await db.auth.admin.generateLink({ type: 'magiclink', email });
+    if (error) return null;
+    const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+      auth: { persistSession: false },
+    });
+    const { data, error: verifyError } = await anon.auth.verifyOtp({
+      token_hash: link.properties.hashed_token,
+      type: 'magiclink',
+    });
+    return verifyError ? null : data.session;
+  }
+
+  const { data: unlock } = await db
+    .from('contact_unlocks')
+    .select('user_id, seller_id, property_id')
+    .eq('payment_status', 'success')
+    .limit(1)
+    .maybeSingle();
+
+  if (!unlock) {
+    console.log('  SKIP  contact isolation — no settled unlock to test with');
+    return;
+  }
+
+  const { data: seller } = await db
+    .from('profiles')
+    .select('mobile_number')
+    .eq('id', unlock.seller_id)
+    .single();
+  const secret = String(seller.mobile_number).replace(/\D/g, '').slice(-10);
+
+  // Everyone who is not the buyer, and can actually sign in.
+  const { data: others } = await db
+    .from('profiles')
+    .select('id, email, full_name, role')
+    .neq('id', unlock.user_id);
+
+  const { data: buyer } = await db.from('profiles').select('email').eq('id', unlock.user_id).single();
+  const buyerSession = await sessionFor(buyer.email);
+
+  const pages = ['/dashboard/contacts', '/properties'];
+  const shows = (html) => html.includes(secret) || html.includes(secret.replace(/(\d{5})(\d{5})/, '$1 $2'));
+
+  if (buyerSession) {
+    for (const path of pages) {
+      const html = await (await fetch(BASE + path, { headers: { cookie: cookieFor(buyerSession) } })).text();
+      check(`the buyer who unlocked it sees the number on ${path}`, shows(html));
+    }
+  }
+
+  for (const person of others ?? []) {
+    if (String(person.email).endsWith('placeholder.invalid')) continue;
+    const session = await sessionFor(person.email);
+    if (!session) continue;
+
+    for (const path of pages) {
+      const html = await (await fetch(BASE + path, { headers: { cookie: cookieFor(session) } })).text();
+      check(
+        `${person.role} "${person.full_name}" cannot see it on ${path}`,
+        !shows(html),
+        shows(html) ? 'the number is in the page' : '',
+      );
+    }
+  }
+
+  const anon = await (await fetch(BASE + '/properties')).text();
+  check('a signed-out visitor cannot see it on /properties', !shows(anon));
+}
+
 main()
+  .then(() => checkContactIsolation())
   .then(() => {
     console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} — ${passed} passed, ${failures.length} failed`);
     failures.forEach((f) => console.log(`  - ${f}`));

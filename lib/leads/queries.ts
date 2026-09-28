@@ -1,14 +1,24 @@
 import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
+import { getUser } from '@/lib/auth/session';
 import type { Enums } from '@/types/database.types';
 
 /**
  * §15 — the seller's lead inbox.
  *
- * Every read goes through `lead_details`, never the `leads` table. The view
- * carries the buyer's name and mobile, and it filters to `auth.uid()` inside
- * itself — so the query cannot accidentally widen to somebody else's
- * enquiries, whatever is passed to it.
+ * Every read goes through `lead_details`, never the `leads` table, because the
+ * view carries the buyer's name and mobile.
+ *
+ * It used to say here that the view filters to `auth.uid()` internally, so a
+ * query could not widen to somebody else's enquiries. That was true of every
+ * ordinary user and false of an admin: the WHERE clause ended `or
+ * public.is_admin()`, so an unfiltered read returned every lead on the site,
+ * buyer phone numbers included, on what is meant to be a personal dashboard.
+ *
+ * Both halves are fixed. Migration 019 narrows the view, and the queries below
+ * name their own scope rather than trusting it — an admin's Enquiries page
+ * shows the listings they are responsible for, and a system-wide view lives in
+ * the admin console where it can be labelled as one.
  *
  * The buyer contact in here is the thing the seller earned when a buyer spent
  * a free unlock or ₹9. It is as sensitive as the seller contact the whole
@@ -49,12 +59,43 @@ export type LeadFilters = {
   propertyId: string | null;
 };
 
+/**
+ * The listings whose enquiries belong on this account's dashboard: its own,
+ * plus any it posted on somebody else's behalf.
+ *
+ * Returns null when there is nobody signed in, which callers treat as "no
+ * leads" rather than "no filter".
+ */
+async function leadScope(): Promise<{ sellerId: string; postedIds: string[] } | null> {
+  const user = await getUser();
+  if (!user) return null;
+
+  const supabase = await createClient();
+  const { data } = await supabase.from('properties').select('id').eq('posted_by', user.id);
+
+  return { sellerId: user.id, postedIds: (data ?? []).map((r) => r.id) };
+}
+
+function applyScope<T>(query: T, scope: { sellerId: string; postedIds: string[] }): T {
+  const q = query as { eq: (c: string, v: string) => T; or: (f: string) => T };
+
+  // `or` only when there is something to or with — an empty `in.()` is a
+  // syntax error, and most accounts have posted nothing on anyone's behalf.
+  return scope.postedIds.length > 0
+    ? q.or(`seller_id.eq.${scope.sellerId},property_id.in.(${scope.postedIds.join(',')})`)
+    : q.eq('seller_id', scope.sellerId);
+}
+
 export const getLeads = cache(async (filters: LeadFilters): Promise<LeadRow[]> => {
   const supabase = await createClient();
 
-  let query = supabase
-    .from('lead_details')
-    .select(COLUMNS)
+  const scope = await leadScope();
+  if (!scope) return [];
+
+  let query = applyScope(
+    supabase.from('lead_details').select(COLUMNS),
+    scope,
+  )
     .order('created_at', { ascending: false })
     .limit(200);
 
@@ -85,9 +126,15 @@ export type LeadSummary = {
 export const getLeadSummary = cache(async (): Promise<LeadSummary> => {
   const supabase = await createClient();
 
-  const { data } = await supabase
-    .from('lead_details')
-    .select('id, status, created_at, property_id, property_title')
+  const scope = await leadScope();
+  if (!scope) {
+    return { total: 0, unactioned: 0, thisWeek: 0, byStatus: {}, properties: [] };
+  }
+
+  const { data } = await applyScope(
+    supabase.from('lead_details').select('id, status, created_at, property_id, property_title'),
+    scope,
+  )
     .order('created_at', { ascending: false })
     .limit(1000);
 

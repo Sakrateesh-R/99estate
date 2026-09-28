@@ -367,11 +367,17 @@ export async function verifyUnlockPayment(
 async function revealContact(propertyId: string | null): Promise<VerifyResult> {
   if (!propertyId) return { status: 'error', message: 'This payment has no property attached.' };
 
+  const user = await getUser();
+  if (!user) return { status: 'error', message: 'Your session expired. Please sign in again.' };
+
   const supabase = await createClient();
   const { data } = await supabase
     .from('unlocked_seller_contacts')
     .select('seller_name, seller_mobile, seller_type')
     .eq('property_id', propertyId)
+    // The unlock that was just paid for is this user's; without the filter an
+    // admin would read back whichever row the listing happened to have.
+    .eq('buyer_id', user.id)
     .maybeSingle();
 
   if (!data?.seller_mobile) {
