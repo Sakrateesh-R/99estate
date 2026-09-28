@@ -27,6 +27,9 @@ const PROPERTY_TYPES = [
   'commercial_plot',
   'pg_hostel',
   'agricultural_land',
+  'vacant_land',
+  'farm_land',
+  'investment_land',
 ] as const;
 
 const AREA_UNITS = [

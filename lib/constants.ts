@@ -63,6 +63,9 @@ export const PROPERTY_TYPE_LABELS: Record<Enums<'property_type'>, string> = {
   commercial_plot: 'Commercial Plot',
   pg_hostel: 'PG / Hostel',
   agricultural_land: 'Agricultural Land',
+  vacant_land: 'Vacant Land',
+  farm_land: 'Farm Land',
+  investment_land: 'Investment Land',
 };
 
 /** Types where BHK / bathrooms / furnishing are meaningful inputs. */
@@ -77,12 +80,22 @@ export const RESIDENTIAL_TYPES: Enums<'property_type'>[] = [
   'pg_hostel',
 ];
 
-/** Types measured as land, where floors and furnishing make no sense. */
+/**
+ * Types measured as land, where floors and furnishing make no sense.
+ *
+ * The three newest belong here rather than under residential: a plot has no
+ * bedrooms to declare, and the wizard uses this list to decide which questions
+ * to stop asking. Note that `farmhouse` is residential — it is a house — while
+ * `farm_land` is not.
+ */
 export const LAND_TYPES: Enums<'property_type'>[] = [
   'residential_plot',
   'commercial_plot',
   'industrial_land',
   'agricultural_land',
+  'vacant_land',
+  'farm_land',
+  'investment_land',
 ];
 
 export const LISTING_TYPE_LABELS: Record<Enums<'listing_type'>, string> = {

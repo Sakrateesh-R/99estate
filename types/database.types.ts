@@ -616,7 +616,10 @@ export type Database = {
         | 'industrial_land'
         | 'commercial_plot'
         | 'pg_hostel'
-        | 'agricultural_land';
+        | 'agricultural_land'
+        | 'vacant_land'
+        | 'farm_land'
+        | 'investment_land';
       listing_type: 'sale' | 'rent' | 'pg';
       area_unit: 'sqft' | 'sqm' | 'sqyd' | 'acre' | 'hectare' | 'cent' | 'guntha' | 'bigha' | 'marla' | 'kanal';
       furnishing_status: 'unfurnished' | 'semi_furnished' | 'fully_furnished';

@@ -22,7 +22,14 @@ const TABS: { value: Tab; label: string }[] = [
 ];
 
 const COMMERCIAL_TYPES = ['office_space', 'co_working', 'shop', 'showroom', 'warehouse'] as const;
-const PLOT_TYPES = ['residential_plot', 'commercial_plot', 'agricultural_land'] as const;
+const PLOT_TYPES = [
+  'residential_plot',
+  'commercial_plot',
+  'agricultural_land',
+  'vacant_land',
+  'farm_land',
+  'investment_land',
+] as const;
 
 /**
  * Hero search (§21), built on the tab pattern every Indian property portal

@@ -42,6 +42,7 @@ const PROPERTY_TYPES = [
   'apartment', 'independent_house', 'villa', 'builder_floor', 'penthouse', 'studio', 'farmhouse',
   'residential_plot', 'office_space', 'co_working', 'shop', 'showroom', 'warehouse',
   'industrial_land', 'commercial_plot', 'pg_hostel', 'agricultural_land',
+  'vacant_land', 'farm_land', 'investment_land',
 ] as const;
 const FURNISHINGS = ['unfurnished', 'semi_furnished', 'fully_furnished'] as const;
 const FACINGS = ['north', 'south', 'east', 'west', 'north_east', 'north_west', 'south_east', 'south_west'] as const;

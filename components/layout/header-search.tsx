@@ -3,12 +3,11 @@
 import * as React from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { ChevronDown, MapPin, Search, SlidersHorizontal } from 'lucide-react';
-import { cn, stripEmptyFields } from '@/lib/utils';
+import { cn, entriesOf, stripEmptyFields } from '@/lib/utils';
 import {
   LISTING_TYPE_LABELS,
   PROPERTY_TYPE_LABELS,
   RENT_BUDGETS,
-  RESIDENTIAL_TYPES,
   SALE_BUDGETS,
   SEARCH_FORM_PARAMS,
 } from '@/lib/constants';
@@ -152,9 +151,16 @@ export function HeaderSearch({ cities }: { cities: { city: string; state: string
             className={cn(selectClass, 'rounded-full border border-ink-300 md:rounded-none md:border-0')}
           >
             <option value="">Any property type</option>
-            {RESIDENTIAL_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {PROPERTY_TYPE_LABELS[t]}
+            {/* Every type, not just the residential ones.
+
+                Offering eight of twenty meant the whole land and commercial half
+                of the catalogue was unreachable from the header — and worse, a
+                search already filtered to one of them had no matching option, so
+                the control rendered blank and looked broken while the filter was
+                in fact applied. */}
+            {entriesOf(PROPERTY_TYPE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
               </option>
             ))}
           </select>
