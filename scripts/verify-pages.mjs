@@ -231,8 +231,47 @@ async function checkContactIsolation() {
   check('a signed-out visitor cannot see it on /properties', !shows(anon));
 }
 
+/**
+ * The map must not give away what the address costs.
+ *
+ * Same rule as the contact: a signed-out visitor gets the neighbourhood, the
+ * buyer who unlocked gets the pin. Checked in the page source rather than by
+ * looking at the map, because the failure mode here is invisible on screen —
+ * coordinates sitting in structured data or a serialised prop while the visible
+ * embed shows only the locality.
+ *
+ * Skips when no listing has a pin yet, which is honest: there is nothing to
+ * leak until a seller pastes a Maps link.
+ */
+async function checkLocationPrivacy() {
+  const { data: pinned } = await db
+    .from('properties')
+    .select('id, slug, latitude, longitude')
+    .eq('status', 'published')
+    .not('latitude', 'is', null)
+    .limit(1)
+    .maybeSingle();
+
+  if (!pinned) {
+    console.log('  SKIP  location privacy — no listing has a map pin yet');
+    return;
+  }
+
+  const url = `${BASE}/property/${pinned.slug}-${pinned.id}`;
+  const html = await (await fetch(url, { headers: { 'cache-control': 'no-cache' } })).text();
+  const exact = [String(pinned.latitude), String(pinned.longitude)];
+
+  check(
+    'a signed-out visitor gets no exact coordinates',
+    !exact.some((n) => html.includes(n)),
+    'a coordinate appears in the page source',
+  );
+  check('a signed-out visitor still gets an area map', html.includes('Around this area'));
+}
+
 main()
   .then(() => checkContactIsolation())
+  .then(() => checkLocationPrivacy())
   .then(() => {
     console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} — ${passed} passed, ${failures.length} failed`);
     failures.forEach((f) => console.log(`  - ${f}`));

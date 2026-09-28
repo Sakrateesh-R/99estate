@@ -276,6 +276,8 @@ export type Database = {
           address: string | null;
           latitude: number | null;
           longitude: number | null;
+          /** The Google Maps link the seller gave; provenance only, never an iframe src. */
+          map_url: string | null;
           seller_type: Database['public']['Enums']['user_role'];
           /** Canonical YouTube/Vimeo URL; constrained by properties_video_url_check. */
           video_url: string | null;
@@ -326,6 +328,8 @@ export type Database = {
           address?: string | null;
           latitude?: number | null;
           longitude?: number | null;
+          /** Constrained by properties_map_url_check to Google Maps hosts. */
+          map_url?: string | null;
           status?: Database['public']['Enums']['property_status'];
           /** Write only what lib/properties/video.ts canonicalises, or the CHECK rejects it. */
           video_url?: string | null;

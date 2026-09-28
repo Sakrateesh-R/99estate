@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parseVideoUrl } from '@/lib/properties/video';
+import { isMapUrl } from '@/lib/properties/map-link';
 
 /**
  * Validation for the property posting form (§12).
@@ -170,6 +171,28 @@ export const locationSchema = z.object({
       .optional(),
   ),
   address: optionalText(500),
+  /**
+   * The Google Maps link the seller pasted.
+   *
+   * Validated as a Maps link and no further: whether coordinates can actually
+   * be read out of it is decided in the action, which can follow a share link.
+   * A link that turns out to be unreadable is a listing without a map, not a
+   * failed save — the locality, city and PIN code are the required fields.
+   */
+  map_url: z.preprocess(
+    (v) => (v === null || (typeof v === 'string' && v.trim() === '') ? undefined : v),
+    z
+      .string()
+      .trim()
+      .max(2048, 'That link is too long')
+      .refine(isMapUrl, 'Paste a Google Maps link — use Share in the Maps app, then Copy link')
+      .optional(),
+  ),
+  /**
+   * Still stored, no longer asked for. These are written by the action from
+   * whatever `map_url` resolves to; they remain in the schema because the same
+   * object parses a database row on the way back into the edit form.
+   */
   latitude: optionalNumber(-90, 90, 'Latitude must be between -90 and 90'),
   longitude: optionalNumber(-180, 180, 'Longitude must be between -180 and 180'),
 });

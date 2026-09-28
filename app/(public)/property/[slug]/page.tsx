@@ -20,6 +20,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { PropertyGallery } from '@/components/property/property-gallery';
 import { PropertyVideo } from '@/components/property/property-video';
+import { PropertyMap } from '@/components/property/property-map';
 import { ContactUnlockCard } from '@/components/property/contact-unlock-card';
 import { SavePropertyButton } from '@/components/property/save-property-button';
 import { ReportPropertyDialog } from '@/components/property/report-property-dialog';
@@ -353,6 +354,22 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                   The exact address is shared once you unlock the seller&rsquo;s contact.
                 </p>
               )}
+
+              {/* The coordinates are handed over only when they have been
+                  earned; otherwise the component is told a pin exists and
+                  nothing more. Deciding here keeps the exact position out of
+                  the rendered tree entirely for everybody else. */}
+              <PropertyMap
+                point={
+                  unlockedAddress && property.latitude !== null && property.longitude !== null
+                    ? { latitude: property.latitude, longitude: property.longitude }
+                    : null
+                }
+                hasPin={property.latitude !== null && property.longitude !== null}
+                locality={property.locality}
+                city={property.city}
+                state={property.state}
+              />
             </section>
 
             <div className="mt-6 flex items-center justify-between gap-4">
@@ -442,12 +459,22 @@ function buildListingJsonLd({
       postalCode: property.pincode ?? undefined,
       addressCountry: 'IN',
     },
+    /**
+     * Rounded to two decimals — roughly a kilometre, so this says "this part of
+     * Coimbatore" and not "this gate".
+     *
+     * The exact pin is what the ₹9 unlock buys, and structured data is markup in
+     * a public page: emitting the stored precision here would have handed the
+     * location to anyone reading source, however careful the visible map is.
+     * Search engines want a location, not a survey, so the rounded pair keeps
+     * the SEO value and gives away nothing the locality did not already.
+     */
     ...(property.latitude && property.longitude
       ? {
           geo: {
             '@type': 'GeoCoordinates',
-            latitude: property.latitude,
-            longitude: property.longitude,
+            latitude: Number(property.latitude.toFixed(2)),
+            longitude: Number(property.longitude.toFixed(2)),
           },
         }
       : {}),

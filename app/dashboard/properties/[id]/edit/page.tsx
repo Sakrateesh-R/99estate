@@ -46,6 +46,7 @@ function toWizardValues(property: Tables<'properties'>): WizardValues {
     address: property.address ?? '',
     latitude: str(property.latitude),
     longitude: str(property.longitude),
+    map_url: property.map_url ?? '',
     video_url: property.video_url ?? '',
   };
 }

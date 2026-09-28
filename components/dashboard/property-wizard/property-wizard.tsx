@@ -71,6 +71,7 @@ export const EMPTY_WIZARD_VALUES: WizardValues = {
   address: '',
   latitude: '',
   longitude: '',
+  map_url: '',
   video_url: '',
 };
 

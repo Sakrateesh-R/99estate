@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { getUser, getProfile } from '@/lib/auth/session';
 import { requirePropertyAccess as requireOwnedProperty } from '@/lib/properties/ownership';
+import { resolveMapUrl } from '@/lib/properties/map-link';
 import {
   propertyDraftSchema,
   submissionSchema,
@@ -43,6 +44,34 @@ function collectFieldErrors(issues: z.ZodIssue[]): Record<string, string> {
 // ---------------------------------------------------------------------------
 
 /**
+ * Turns the seller's Google Maps link into the two numbers we store.
+ *
+ * Done here rather than in the schema because a share link has to be followed
+ * to say anything — `maps.app.goo.gl/xxxx` is an opaque id — and validation
+ * should not make network requests.
+ *
+ * Coordinates are always written when a link is present, even as `null`. A
+ * seller who corrects a wrong pin must not be left with the old one, and
+ * supabase-js drops `undefined` keys from an UPDATE, so "clear it" has to be
+ * said explicitly. Clearing the link clears the coordinates with it.
+ */
+async function withResolvedLocation<T extends { map_url?: string }>(values: T) {
+  if (!('map_url' in values)) return values;
+
+  if (!values.map_url) {
+    return { ...values, map_url: null, latitude: null, longitude: null };
+  }
+
+  const { point } = await resolveMapUrl(values.map_url);
+
+  return {
+    ...values,
+    latitude: point?.latitude ?? null,
+    longitude: point?.longitude ?? null,
+  };
+}
+
+/**
  * Saves steps 1–3 of the wizard (§12). Creates the row on first save and
  * updates it thereafter, so images and amenities in later steps have a real
  * `property_id` to attach to.
@@ -65,7 +94,7 @@ export async function savePropertyDraft(
   }
 
   const supabase = await createClient();
-  const values = parsed.data;
+  const values = await withResolvedLocation(parsed.data);
 
   if (propertyId) {
     const owned = await requireOwnedProperty(propertyId);

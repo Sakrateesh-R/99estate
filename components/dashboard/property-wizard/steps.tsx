@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { cn, entriesOf } from '@/lib/utils';
 import { Checkbox, Field, Input, PriceInput, Select, Textarea } from '@/components/ui/field';
+import { MapLinkField } from '@/components/dashboard/property-wizard/map-link-field';
 import {
   AREA_UNIT_LABELS,
   FACING_LABELS,
@@ -41,6 +42,7 @@ export type WizardValues = {
   address: string;
   latitude: string;
   longitude: string;
+  map_url: string;
   video_url: string;
 };
 
@@ -472,31 +474,14 @@ export function LocationStep({
         />
       </Field>
 
-      <details className="rounded-field border border-ink-200 bg-ink-50/60 p-4">
-        <summary className="cursor-pointer text-sm font-medium text-ink-700">
-          Add map coordinates (optional)
-        </summary>
-        <div className="mt-4 grid gap-5 sm:grid-cols-2">
-          <Field label="Latitude" htmlFor="latitude" error={errors.latitude}>
-            <Input
-              id="latitude"
-              inputMode="decimal"
-              value={values.latitude}
-              onChange={(e) => set('latitude', e.target.value.replace(/[^\d.-]/g, ''))}
-              placeholder="11.0785"
-            />
-          </Field>
-          <Field label="Longitude" htmlFor="longitude" error={errors.longitude}>
-            <Input
-              id="longitude"
-              inputMode="decimal"
-              value={values.longitude}
-              onChange={(e) => set('longitude', e.target.value.replace(/[^\d.-]/g, ''))}
-              placeholder="76.9966"
-            />
-          </Field>
-        </div>
-      </details>
+      {/* This replaced a pair of latitude/longitude number fields. Sellers do
+          not know their coordinates, but every one of them can hit Share in the
+          Maps app — and the two numbers are read out of the link afterwards. */}
+      <MapLinkField
+        value={values.map_url}
+        error={errors.map_url}
+        onChange={(v) => set('map_url', v)}
+      />
     </div>
   );
 }
