@@ -10,7 +10,14 @@
  * Nothing here touches the network. `resolveMapUrl` does, and is covered by the
  * page checks instead.
  */
-import { parseMapUrl, isMapUrl, isShortMapUrl, areaEmbedUrl, pointEmbedUrl } from '../lib/properties/map-link.ts';
+import {
+  parseMapUrl,
+  isMapUrl,
+  isShortMapUrl,
+  normaliseMapUrl,
+  areaEmbedUrl,
+  pointEmbedUrl,
+} from '../lib/properties/map-link.ts';
 
 let passed = 0;
 const failures: string[] = [];
@@ -121,6 +128,67 @@ check('area embed survives a missing locality', areaNoLocality.includes('Coimbat
 const pin = pointEmbedUrl(AT);
 check('point embed carries the coordinates', pin.includes(`${LAT},${LNG}`), true);
 check('point embed zooms in', pin.includes('z=17'), true);
+
+// --- normalisation, and agreement with the database constraint --------------
+/**
+ * The CHECK from migration 024, as the database will apply it.
+ *
+ * Duplicated here on purpose. Migration 022 had a stricter pattern than the
+ * parser and rejected the commonest link there is — a share link with Google's
+ * own `?g_st=ic` on the end — so the wizard confirmed the link and the insert
+ * then failed with nothing for the seller to fix. Anything the app accepts and
+ * normalises must satisfy this, and that is now an assertion rather than an
+ * assumption.
+ */
+const DB_CHECK = /^https:\/\/(maps\.app\.goo\.gl|(www\.)?goo\.gl|(www\.|maps\.)?google\.(com|co\.in))(\/|$)/;
+
+const ACCEPTED_BY_APP = [
+  'https://maps.app.goo.gl/AbCd1234',
+  // What a phone's share sheet actually produces.
+  'https://maps.app.goo.gl/AbCd1234?g_st=ic',
+  'https://maps.app.goo.gl/AbCd1234?g_st=com.google.maps.preview.copy',
+  'https://maps.app.goo.gl/AbCd1234/',
+  'maps.app.goo.gl/AbCd1234',
+  'https://goo.gl/maps/AbCd1234?x=1',
+  'https://www.google.com/maps?q=11.0,76.9',
+  'https://maps.google.com?q=11.0,76.9',
+  'www.google.com/maps?q=11.0,76.9',
+  'https://www.google.co.in/maps/@11.0,76.9,17z',
+  '  https://maps.app.goo.gl/AbCd1234  ',
+  `https://www.google.com/maps/place/Plot/@${LAT},${LNG},17z/data=!4m6!3m5!8m2!3d${LAT}!4d${LNG}`,
+];
+
+for (const url of ACCEPTED_BY_APP) {
+  const stored = normaliseMapUrl(url);
+  check(`normaliseMapUrl returns something for — ${url.trim()}`, stored !== null, true);
+  check(
+    `the database would accept what we store for — ${url.trim()}`,
+    stored !== null && DB_CHECK.test(stored),
+    true,
+  );
+  check(`stored value is https — ${url.trim()}`, stored?.startsWith('https://'), true);
+}
+
+// Rejected by the app, so never stored, so the constraint is never consulted.
+for (const url of ['https://maps.apple.com/?ll=1,2', 'https://google.com.evil.example/maps', '', 'nonsense']) {
+  check(`normaliseMapUrl rejects — ${url || '(empty)'}`, normaliseMapUrl(url), null);
+}
+
+check(
+  'whitespace does not survive into the database',
+  normaliseMapUrl('  https://maps.app.goo.gl/AbCd1234  '),
+  'https://maps.app.goo.gl/AbCd1234',
+);
+check(
+  'the host is lowercased',
+  normaliseMapUrl('https://MAPS.APP.GOO.GL/AbCd1234'),
+  'https://maps.app.goo.gl/AbCd1234',
+);
+check(
+  'the tracking parameter is kept rather than guessed at',
+  normaliseMapUrl('maps.app.goo.gl/AbCd1234?g_st=ic'),
+  'https://maps.app.goo.gl/AbCd1234?g_st=ic',
+);
 
 console.log(`${failures.length === 0 ? 'PASS' : 'FAIL'} — ${passed} passed, ${failures.length} failed`);
 failures.forEach((f) => console.log(`  FAIL  ${f}`));

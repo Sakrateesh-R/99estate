@@ -67,6 +67,28 @@ export function isMapUrl(raw: string | null | undefined): boolean {
   return SHORT_HOSTS.has(parsed.host) || LONG_HOSTS.has(parsed.host);
 }
 
+/**
+ * The form that gets stored.
+ *
+ * `isMapUrl` accepts a link pasted without a scheme, because people paste
+ * `maps.app.goo.gl/AbCd1234` constantly — so something has to put the scheme
+ * back before the value reaches a column with a CHECK on it. Without this the
+ * wizard said the link was recognised and the insert then failed on the
+ * constraint, which is the worst of both answers.
+ *
+ * Rebuilt through `URL` rather than string-patched, so the host is lowercased
+ * and a stray space or trailing newline cannot survive into the database.
+ */
+export function normaliseMapUrl(raw: string | null | undefined): string | null {
+  const parsed = hostOf(raw ?? '');
+  if (!parsed || !isMapUrl(raw)) return null;
+
+  const { url } = parsed;
+  // Query strings are kept: Google's share sheet appends tracking parameters
+  // like `?g_st=ic`, and for a long link the coordinates may be in there.
+  return `https://${url.hostname.toLowerCase()}${url.pathname}${url.search}`;
+}
+
 function point(lat: number, lng: number): MapPoint | null {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { getUser, getProfile } from '@/lib/auth/session';
 import { requirePropertyAccess as requireOwnedProperty } from '@/lib/properties/ownership';
-import { resolveMapUrl } from '@/lib/properties/map-link';
+import { normaliseMapUrl, resolveMapUrl } from '@/lib/properties/map-link';
 import {
   propertyDraftSchema,
   submissionSchema,
@@ -66,6 +66,8 @@ async function withResolvedLocation<T extends { map_url?: string }>(values: T) {
 
   return {
     ...values,
+    // Stored with the scheme the CHECK expects, whatever was pasted.
+    map_url: normaliseMapUrl(values.map_url) ?? values.map_url,
     latitude: point?.latitude ?? null,
     longitude: point?.longitude ?? null,
   };
