@@ -1,6 +1,6 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
-import { isDefinitelyNotFound, notFoundHtml } from '@/lib/seo/routes';
+import { isDefinitelyNotFound, notFoundResponse } from '@/lib/seo/routes';
 import { SITE_NAME } from '@/lib/constants';
 
 export async function middleware(request: NextRequest) {
@@ -22,19 +22,7 @@ export async function middleware(request: NextRequest) {
    * would be a worse bug than the one this fixes.
    */
   if (isDefinitelyNotFound(request.nextUrl.pathname)) {
-    return new NextResponse(notFoundHtml(SITE_NAME), {
-      status: 404,
-      headers: {
-        'content-type': 'text/html; charset=utf-8',
-        // Belt and braces with the meta tag: a crawler that reads only headers
-        // still learns not to index this.
-        'x-robots-tag': 'noindex, nofollow',
-        // A 404 is cheap to recompute and must not be cached as though the URL
-        // were permanently dead — the path may become a real landing page the
-        // moment somebody lists a property there.
-        'cache-control': 'no-store',
-      },
-    });
+    return notFoundResponse(SITE_NAME);
   }
 
   return updateSession(request);

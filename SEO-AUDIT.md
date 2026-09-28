@@ -148,11 +148,25 @@ JavaScript — so it cannot itself fail. Headers carry `X-Robots-Tag: noindex, n
 and `Cache-Control: no-store`, the latter because a path that 404s today becomes a real
 landing page the moment somebody lists a property there.
 
-**What is deliberately still left to the page.** A landing slug that is well-formed but
-names a city we do not cover, and a well-formed listing id that does not exist. Both need
-a database lookup to judge, and putting one in middleware would tax every request to the
-pages that matter most. Those remain soft 404s — a much smaller set than what was fixed,
-and they require somebody to have linked to a place or listing that never existed.
+**Deleted and unpublished listings now 404 too.** A well-formed id that no longer
+resolves — deleted, taken down, paused or expired — needs a database lookup, which the
+first pass left to the page. It is now done in middleware, and the cost objection turned
+out not to apply once it was scoped correctly:
+
+- **Only for signed-out visitors.** A seller opening their own draft, or an admin opening
+  a listing they took down, is signed in and RLS shows them the row — so this can never
+  404 somebody's own work. Verified: the same draft URL answers 404 signed out and 200 to
+  its owner.
+- **Only one indexed lookup**, on a request that already talks to Supabase, and never on
+  the signed-in browsing that is latency-sensitive.
+
+Not cloaking: the URL is gone for everyone, and Googlebot is an anonymous visitor like any
+other. The signed-in path simply still renders the old soft 404, which nobody indexes.
+
+**What remains.** A landing slug that is well-formed but names a city we do not cover —
+`/property-for-sale-in-atlantis`. That needs the places index, and it requires somebody to
+have linked to a city that never existed, so it is rarer than the listing case by a wide
+margin.
 
 **The route list is load-bearing, so it is guarded.** Middleware 404s single-segment
 paths it does not recognise, which means a new top-level route missing from

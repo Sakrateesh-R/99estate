@@ -1,9 +1,11 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
-import { isSafeReturnPath } from '@/lib/utils';
+import { isSafeReturnPath, propertyIdFromSlug } from '@/lib/utils';
+import { notFoundResponse } from '@/lib/seo/routes';
 import {
   DEFAULT_SIGNED_IN_PATH,
+  SITE_NAME,
   RETURN_TO_COOKIE,
   RETURN_TO_MAX_AGE,
 } from '@/lib/constants';
@@ -78,6 +80,47 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  /**
+   * §23 — a listing that is gone answers 404, not 200 with a 404 page inside.
+   *
+   * The path shape is checked earlier without a database; this is the case that
+   * needs one — a well-formed listing id that no longer resolves, because the
+   * listing was deleted, taken down, paused or expired. Those are precisely the
+   * URLs Google has already indexed, so leaving them as soft 404s teaches it
+   * that the site answers 200 for pages that are gone.
+   *
+   * Only for signed-out visitors, which is what makes it safe and cheap:
+   *
+   *   Safe — a seller opening their own draft, or an admin opening a listing
+   *   they took down, must never be told it does not exist. Both are signed in,
+   *   and RLS would show them the row anyway. Restricting to anonymous requests
+   *   means this can never 404 somebody's own work.
+   *
+   *   Cheap — a signed-out request has no session to refresh, so `getUser()`
+   *   above costs nothing and this is the only round trip. Signed-in browsing,
+   *   which is the latency-sensitive case, is untouched.
+   *
+   * Not cloaking: the same URL is gone for everyone, and Googlebot is an
+   * anonymous visitor like any other. The signed-in path differs only in that
+   * it still renders the old soft 404, which nobody indexes.
+   *
+   * RLS decides visibility, so this asks no questions about status itself:
+   * `properties_select_published` already hides anything not live.
+   */
+  if (!user && pathname.startsWith('/property/')) {
+    const id = propertyIdFromSlug(pathname.slice('/property/'.length));
+
+    if (id) {
+      const { data: listing } = await supabase
+        .from('properties')
+        .select('id')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (!listing) return notFoundResponse(SITE_NAME);
+    }
+  }
 
   if (!user && matchesPrefix(pathname, PROTECTED_PREFIXES)) {
     // Remember the destination in a cookie rather than a `?next=` parameter,

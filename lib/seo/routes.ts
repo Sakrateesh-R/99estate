@@ -1,3 +1,4 @@
+import { NextResponse } from 'next/server';
 import { parseLandingSlug } from '@/lib/seo/landing';
 import { KNOWN_TOP_LEVEL } from '@/lib/seo/route-segments';
 import { propertyIdFromSlug } from '@/lib/utils';
@@ -58,6 +59,28 @@ export function isDefinitelyNotFound(pathname: string): boolean {
   }
 
   return false;
+}
+
+/**
+ * The 404 itself, ready to return from middleware.
+ *
+ * Shared so every path that decides "this is gone" answers identically — the
+ * same body, the same headers, the same status.
+ */
+export function notFoundResponse(siteName: string): NextResponse {
+  return new NextResponse(notFoundHtml(siteName), {
+    status: 404,
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      // Belt and braces with the meta tag: a crawler that reads only headers
+      // still learns not to index this.
+      'x-robots-tag': 'noindex, nofollow',
+      // A 404 is cheap to recompute and must not be cached as though the URL
+      // were permanently dead — a listing can be restored, and a path can
+      // become a real landing page the moment somebody lists a property there.
+      'cache-control': 'no-store',
+    },
+  });
 }
 
 /**
