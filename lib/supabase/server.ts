@@ -34,3 +34,37 @@ export async function createClient() {
     },
   );
 }
+
+/**
+ * A client that is still usable inside `after()`.
+ *
+ * Request APIs belong to the request, and `after()` runs once the response has
+ * gone — reaching for `cookies()` or `headers()` in there throws. The ordinary
+ * client looks safe because it awaits `cookies()` up front, but its `getAll`
+ * closes over the live store and is called later, when the query runs.
+ *
+ * So the jar is read now and frozen. The session travels in that snapshot,
+ * which is the point: `auth.uid()` is how the database knows not to count a
+ * seller viewing their own listing, and an anonymous client would lose that.
+ *
+ * Nothing here can write a cookie. A deferred task has no response left to set
+ * one on, so token refresh stays where it belongs, in middleware.
+ */
+export async function createDeferredClient() {
+  const snapshot = (await cookies()).getAll().map(({ name, value }) => ({ name, value }));
+
+  return createServerClient<Database>(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      cookies: {
+        getAll() {
+          return snapshot;
+        },
+        setAll() {
+          // Deliberately empty: see above.
+        },
+      },
+    },
+  );
+}

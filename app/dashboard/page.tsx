@@ -138,6 +138,7 @@ export default async function DashboardOverviewPage() {
                     <p className="mt-0.5 truncate text-xs text-ink-500">
                       {formatListingPrice(property.price, property.listing_type)} ·{' '}
                       {[property.locality, property.city].filter(Boolean).join(', ')}
+                      {property.ownerName ? ` · for ${property.ownerName}` : ''}
                     </p>
                   </div>
 

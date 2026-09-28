@@ -1,7 +1,7 @@
 import { cache } from 'react';
 import { createHash } from 'node:crypto';
 import { headers } from 'next/headers';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createDeferredClient } from '@/lib/supabase/server';
 import type { Enums, Tables } from '@/types/database.types';
 
 /**
@@ -160,30 +160,63 @@ export async function getUnlockedAddress(propertyId: string): Promise<string | n
 /**
  * §25 analytics — records one view per visitor per IST day.
  *
+ * Returns the write as a task to hand to `after()`, rather than doing it
+ * inline, because tracking must not add latency to the page it is measuring.
+ *
+ * The split is the whole point. Everything that needs the request — the headers,
+ * the cookie jar — is read *here*, during the render. `after()` runs once the
+ * response has gone, and a request API touched in there throws:
+ *
+ *   Route /property/[slug] used "headers" inside "after(...)".
+ *
+ * Which is exactly what used to happen. The throw was swallowed by a bare
+ * `catch {}`, so tracking recorded nothing at all from the day it shipped while
+ * every listing reported "0 views" — indistinguishable from having no visitors,
+ * and so invisible. Returning a closure that touches no request API makes the
+ * mistake hard to make again; the errors below make it loud if it happens.
+ *
  * The visitor key is a salted hash of IP + user agent: enough to collapse
  * refreshes into a single view, not enough to identify anyone. The salt is the
  * Supabase anon key, which is already deployment-specific.
  */
-export async function recordPropertyView(propertyId: string): Promise<void> {
-  try {
-    const headerList = await headers();
-    const ip =
-      headerList.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-      headerList.get('x-real-ip') ??
-      'unknown';
-    const agent = headerList.get('user-agent') ?? 'unknown';
+export async function prepareViewTracking(propertyId: string): Promise<() => Promise<void>> {
+  const headerList = await headers();
+  const ip =
+    headerList.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    headerList.get('x-real-ip') ??
+    'unknown';
+  const agent = headerList.get('user-agent') ?? 'unknown';
 
-    const visitorHash = createHash('sha256')
-      .update(`${ip}|${agent}|${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''}`)
-      .digest('hex')
-      .slice(0, 64);
+  const visitorHash = createHash('sha256')
+    .update(`${ip}|${agent}|${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''}`)
+    .digest('hex')
+    .slice(0, 64);
 
-    const supabase = await createClient();
-    await supabase.rpc('record_property_view', {
-      p_property_id: propertyId,
-      p_visitor_hash: visitorHash,
-    });
-  } catch {
-    // Analytics must never break a page render.
-  }
+  // Carries the session, so the database can still tell that a seller is
+  // looking at their own listing and decline to count it.
+  const supabase = await createDeferredClient();
+
+  return async () => {
+    try {
+      const { error } = await supabase.rpc('record_property_view', {
+        p_property_id: propertyId,
+        p_visitor_hash: visitorHash,
+      });
+
+      // Analytics must never break a page render — but it must not fail in
+      // silence either.
+      if (error) {
+        console.error('[analytics] record_property_view failed', {
+          propertyId,
+          code: error.code,
+          message: error.message,
+        });
+      }
+    } catch (cause) {
+      console.error('[analytics] recordPropertyView threw', {
+        propertyId,
+        message: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  };
 }

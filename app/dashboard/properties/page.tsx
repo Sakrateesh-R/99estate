@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Building2, Eye, Heart, ImageIcon, KeyRound, Plus, Users } from 'lucide-react';
+import { Building2, Eye, Heart, ImageIcon, KeyRound, Plus, UserRound, Users } from 'lucide-react';
 import { PropertyActions } from '@/components/dashboard/property-actions';
 import { PropertyStatusBadge, VerifiedBadge } from '@/components/ui/badge';
 import { ButtonLink } from '@/components/ui/button';
@@ -63,6 +63,7 @@ export default async function SellerPropertiesPage() {
                     <p className="mt-0.5 truncate text-xs text-ink-500">
                       {[property.locality, property.city].filter(Boolean).join(', ')}
                     </p>
+                    <OnBehalfNote ownerName={property.ownerName} />
                     <p className="mt-1 text-sm font-bold text-ink-950">
                       {formatListingPrice(property.price, property.listing_type)}
                     </p>
@@ -130,6 +131,7 @@ export default async function SellerPropertiesPage() {
                             {formatListingPrice(property.price, property.listing_type)} ·{' '}
                             {[property.locality, property.city].filter(Boolean).join(', ')}
                           </p>
+                          <OnBehalfNote ownerName={property.ownerName} />
                         </div>
                       </div>
                     </td>
@@ -186,6 +188,24 @@ function Thumb({ property, className }: { property: SellerPropertyRow; className
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Marks a listing the signed-in admin entered for somebody else (§12).
+ *
+ * These appear here because most of those owners are placeholder accounts that
+ * cannot sign in, so this is the only dashboard they have. Saying whose they are
+ * keeps that clear — the listing is being managed, not owned.
+ */
+function OnBehalfNote({ ownerName }: { ownerName?: string | null }) {
+  if (!ownerName) return null;
+
+  return (
+    <p className="mt-0.5 flex items-center gap-1 truncate text-[0.6875rem] text-ink-400">
+      <UserRound className="size-3 shrink-0" aria-hidden />
+      Posted for {ownerName}
+    </p>
   );
 }
 

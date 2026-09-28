@@ -5,6 +5,7 @@ import type { RegisteredImage } from '@/lib/properties/image-actions';
 export type SellerPropertyRow = Pick<
   Tables<'properties'>,
   | 'id'
+  | 'seller_id'
   | 'slug'
   | 'title'
   | 'status'
@@ -24,10 +25,17 @@ export type SellerPropertyRow = Pick<
   | 'rejection_reason'
   | 'created_at'
   | 'updated_at'
->;
+> & {
+  /**
+   * Set only when this listing belongs to somebody else — i.e. the signed-in
+   * admin posted it on their behalf. Null for your own listings.
+   */
+  ownerName?: string | null;
+};
 
 const SELLER_ROW_COLUMNS = [
   'id',
+  'seller_id',
   'slug',
   'title',
   'status',
@@ -49,16 +57,58 @@ const SELLER_ROW_COLUMNS = [
   'updated_at',
 ].join(', ');
 
+/**
+ * The listings this account is responsible for — its own, plus any it entered
+ * on somebody else's behalf (§12).
+ *
+ * `posted_by` has to be in here or an admin's dashboard reads zero across the
+ * board while they are the only person who can do anything about it. A listing
+ * typed in for a walk-in owner belongs to that owner, so `seller_id` is theirs
+ * and nothing matched — but most of those owners are placeholder accounts with
+ * no usable email, which cannot sign in at all. Leaving them out of the
+ * admin's dashboard meant the listings had no dashboard anywhere.
+ *
+ * For an ordinary seller this changes nothing: `properties_guard_posted_by`
+ * pins `posted_by` to NULL for everyone who is not an admin, so the second
+ * branch cannot match a row they did not post.
+ */
+function ownedOrPostedBy(sellerId: string) {
+  return `seller_id.eq.${sellerId},posted_by.eq.${sellerId}`;
+}
+
 export async function getSellerProperties(sellerId: string): Promise<SellerPropertyRow[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from('properties')
     .select(SELLER_ROW_COLUMNS)
-    .eq('seller_id', sellerId)
+    .or(ownedOrPostedBy(sellerId))
     .order('updated_at', { ascending: false })
     .returns<SellerPropertyRow[]>();
 
-  return data ?? [];
+  const rows = data ?? [];
+
+  /**
+   * Name the owner on anything posted for someone else, so the list never
+   * implies the admin owns a stranger's house. One extra read, and only when
+   * such a row exists — an ordinary seller never pays for it.
+   */
+  const otherSellerIds = [...new Set(rows.filter((r) => r.seller_id !== sellerId).map((r) => r.seller_id))];
+
+  if (otherSellerIds.length === 0) {
+    return rows.map((row) => ({ ...row, ownerName: null }));
+  }
+
+  const { data: owners } = await supabase
+    .from('profiles')
+    .select('id, full_name')
+    .in('id', otherSellerIds);
+
+  const nameById = new Map((owners ?? []).map((o) => [o.id, o.full_name]));
+
+  return rows.map((row) => ({
+    ...row,
+    ownerName: row.seller_id === sellerId ? null : (nameById.get(row.seller_id) ?? null),
+  }));
 }
 
 export type SellerStats = {
@@ -84,7 +134,7 @@ export async function getSellerStats(sellerId: string): Promise<SellerStats> {
   const { data } = await supabase
     .from('properties')
     .select('status, expires_at, views_count, saves_count, unlocks_count, leads_count')
-    .eq('seller_id', sellerId);
+    .or(ownedOrPostedBy(sellerId));
 
   const rows = data ?? [];
   const now = Date.now();

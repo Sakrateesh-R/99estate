@@ -26,7 +26,7 @@ import { ReportPropertyDialog } from '@/components/property/report-property-dial
 import { VerifiedBadge, Badge } from '@/components/ui/badge';
 import {
   getPropertyDetail,
-  recordPropertyView,
+  prepareViewTracking,
   getUnlockedAddress,
   type PropertyDetail,
 } from '@/lib/properties/detail';
@@ -131,8 +131,10 @@ export default async function PropertyDetailPage({ params }: PageProps) {
   ]);
 
   // View tracking runs after the response is streamed — it must never add
-  // latency to the page it is measuring.
-  after(() => recordPropertyView(property.id));
+  // latency to the page it is measuring. The request data it needs is gathered
+  // now, during the render; `after()` receives a task that touches no request
+  // API, because doing so once the response has gone throws.
+  after(await prepareViewTracking(property.id));
 
   const canonicalPath = propertyPath(property);
 
