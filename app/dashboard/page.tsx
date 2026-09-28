@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Building2, Eye, KeyRound, Plus, Signal, Sparkles, Users } from 'lucide-react';
+import { Building2, ChevronRight, Eye, KeyRound, Plus, Signal, Sparkles, Users } from 'lucide-react';
 import { StatCard } from '@/components/ui/card';
 import { ButtonLink } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -8,6 +8,7 @@ import { PropertyStatusBadge } from '@/components/ui/badge';
 import { requireProfile } from '@/lib/auth/session';
 import { getSellerProperties, getSellerStats } from '@/lib/properties/seller-queries';
 import { getDailyContactUsage } from '@/lib/contacts/usage';
+import { countUnlockedContacts } from '@/lib/contacts/unlocked';
 import { formatCount, formatListingPrice, formatQuotaReset } from '@/lib/format';
 import { FREE_DAILY_UNLOCKS, PAID_UNLOCK_PRICE } from '@/lib/constants';
 
@@ -19,10 +20,11 @@ export const metadata: Metadata = {
 export default async function DashboardOverviewPage() {
   const profile = await requireProfile();
 
-  const [stats, properties, usage] = await Promise.all([
+  const [stats, properties, usage, unlockedCount] = await Promise.all([
     getSellerStats(profile.id),
     getSellerProperties(profile.id),
     getDailyContactUsage(),
+    countUnlockedContacts(),
   ]);
 
   const firstName = profile.full_name?.split(' ')[0] ?? 'there';
@@ -82,6 +84,32 @@ export default async function DashboardOverviewPage() {
             </div>
           ) : null}
         </div>
+
+        {/**
+         * The way in to the numbers you have already unlocked.
+         *
+         * It sits here rather than in the tiles above because it is the one
+         * buyer-side figure on a page of seller-side ones, and this panel is
+         * already the buyer's. The dashboard rail does carry a link, but on a
+         * phone that rail is a horizontal scroller with no visible scrollbar and
+         * this is its fourth item — so in practice it was off-screen, and a
+         * contact somebody paid for should never be hard to find again.
+         */}
+        <Link
+          href="/dashboard/contacts"
+          className="flex items-center justify-between gap-3 border-t border-accent-200/70 px-5 py-3.5 text-sm transition-colors hover:bg-accent-50/60"
+        >
+          <span className="flex items-center gap-2.5 font-semibold text-ink-900">
+            <KeyRound className="size-4 text-accent-700" aria-hidden />
+            {unlockedCount === 0
+              ? 'Contacts you unlock will be saved here'
+              : `${unlockedCount} contact${unlockedCount === 1 ? '' : 's'} you have unlocked`}
+          </span>
+          <span className="flex shrink-0 items-center gap-1 font-semibold text-brand-700">
+            {unlockedCount === 0 ? 'How it works' : 'View numbers'}
+            <ChevronRight className="size-4" aria-hidden />
+          </span>
+        </Link>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -94,8 +122,12 @@ export default async function DashboardOverviewPage() {
           tone="brand"
         />
         <StatCard label="Property views" value={formatCount(stats.views)} icon={<Eye className="size-5" />} />
+        {/* "Unlocks on your listings", not "Contact unlocks": this is the
+            seller-side figure — buyers who paid to reach *you*. The contacts
+            *you* have unlocked are a different number entirely, and giving both
+            the same name made this tile read as a broken version of that one. */}
         <StatCard
-          label="Contact unlocks"
+          label="Unlocks on your listings"
           value={formatCount(stats.unlocks)}
           icon={<KeyRound className="size-5" />}
           tone="accent"

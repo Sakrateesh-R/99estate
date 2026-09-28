@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   BadgeCheck,
@@ -264,8 +265,16 @@ export function ContactUnlockCard({
           </a>
         </div>
 
+        {/* Saying it is permanent is not much use without saying where it is
+            kept. This is the moment the buyer has the number in front of them,
+            so it is the best place to point at the list. */}
         <p className="mt-4 text-xs leading-relaxed text-ink-500">
-          You have permanent access to this contact. Opening it again will never charge you.
+          You have permanent access to this contact. Opening it again will never charge you — it is
+          saved in{' '}
+          <Link href="/dashboard/contacts" className="font-semibold text-brand-700 hover:underline">
+            your unlocked contacts
+          </Link>
+          .
         </p>
       </Card>
     );
