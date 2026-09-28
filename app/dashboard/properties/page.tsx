@@ -92,38 +92,60 @@ export default async function SellerPropertiesPage() {
             ))}
           </ul>
 
-          <div className="mt-8 hidden overflow-hidden rounded-card border border-ink-200 bg-white lg:block">
-            <table className="w-full text-sm">
+          {/* `overflow-x-auto`, not `overflow-hidden`.
+
+              Seven columns and three row actions do not always fit the content
+              area, and hidden overflow does not mean "it fits" — it means the
+              part that did not fit is silently cut off. Two of the three action
+              buttons were being clipped at the right edge, so a listing could
+              not be viewed or taken down from this table at all. Scrolling shows
+              everything; clipping loses it. */}
+          <div className="mt-8 hidden overflow-x-auto rounded-card border border-ink-200 bg-white lg:block">
+            <table className="w-full min-w-[56rem] text-sm">
               <caption className="sr-only">Your property listings and their performance</caption>
               <thead>
                 <tr className="border-b border-ink-200 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
-                  <th scope="col" className="px-4 py-3 font-semibold">Property</th>
-                  <th scope="col" className="px-4 py-3 font-semibold">Status</th>
-                  <th scope="col" className="px-3 py-3 text-right font-semibold">
+                  <th scope="col" className="px-3 py-3 font-semibold">Property</th>
+                  <th scope="col" className="px-3 py-3 font-semibold">Status</th>
+                  <th scope="col" className="px-2.5 py-3 text-right font-semibold">
                     <span className="inline-flex items-center gap-1"><Eye className="size-3.5" aria-hidden />Views</span>
                   </th>
-                  <th scope="col" className="px-3 py-3 text-right font-semibold">
+                  <th scope="col" className="px-2.5 py-3 text-right font-semibold">
                     <span className="inline-flex items-center gap-1"><Heart className="size-3.5" aria-hidden />Saves</span>
                   </th>
-                  <th scope="col" className="px-3 py-3 text-right font-semibold">
+                  <th scope="col" className="px-2.5 py-3 text-right font-semibold">
                     <span className="inline-flex items-center gap-1"><KeyRound className="size-3.5" aria-hidden />Unlocks</span>
                   </th>
-                  <th scope="col" className="px-3 py-3 text-right font-semibold">
+                  <th scope="col" className="px-2.5 py-3 text-right font-semibold">
                     <span className="inline-flex items-center gap-1"><Users className="size-3.5" aria-hidden />Leads</span>
                   </th>
-                  <th scope="col" className="px-4 py-3 text-right font-semibold">Actions</th>
+                  {/* `w-px` with nowrap is the table idiom for "exactly as wide
+                      as its content": the browser gives a 1px request the space
+                      the cell actually needs and no more, so the actions keep
+                      their full width while the flexible columns absorb the
+                      rest. Without it this column is the one that gets squeezed,
+                      because it is last. */}
+                  <th scope="col" className="w-px whitespace-nowrap px-3 py-3 text-right font-semibold">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
                 {properties.map((property) => (
                   <tr key={property.id} className="transition-colors hover:bg-ink-50/60">
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <div className="flex items-center gap-3">
                         <Thumb property={property} className="size-12" />
-                        <div className="min-w-0">
+                        {/* The bound belongs on the block, not on the title.
+                            Only the title had a max width, so a long locality —
+                            "Very close to Kunnathur–Perundurai Main Road" — grew
+                            this column to 482px and squeezed the action buttons
+                            off the end. `truncate` cannot shorten what it is
+                            never told the width of. */}
+                        <div className="min-w-0 max-w-[17rem]">
                           <Link
                             href={`/dashboard/properties/${property.id}/edit`}
-                            className="block max-w-xs truncate font-semibold text-ink-900 hover:text-brand-700"
+                            className="block truncate font-semibold text-ink-900 hover:text-brand-700"
                           >
                             {property.title}
                           </Link>
@@ -136,21 +158,24 @@ export default async function SellerPropertiesPage() {
                       </div>
                     </td>
 
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <div className="flex flex-col items-start gap-1">
                         <PropertyStatusBadge status={property.status} />
                         {property.status === 'published' && property.expires_at ? (
-                          <span className="text-[0.6875rem] text-ink-500">
+                          // Was wrapping to three lines ("Expires / 27 Dec /
+                          // 2026") once the columns got tight, which made every
+                          // row twice as tall as it needed to be.
+                          <span className="whitespace-nowrap text-[0.6875rem] text-ink-500">
                             Expires {formatDate(property.expires_at)}
                           </span>
                         ) : null}
                       </div>
                     </td>
 
-                    <td className="px-3 py-3 text-right tabular-nums text-ink-700">{formatCount(property.views_count)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ink-700">{formatCount(property.saves_count)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-ink-700">{formatCount(property.unlocks_count)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums font-semibold text-ink-900">
+                    <td className="px-2.5 py-3 text-right tabular-nums text-ink-700">{formatCount(property.views_count)}</td>
+                    <td className="px-2.5 py-3 text-right tabular-nums text-ink-700">{formatCount(property.saves_count)}</td>
+                    <td className="px-2.5 py-3 text-right tabular-nums text-ink-700">{formatCount(property.unlocks_count)}</td>
+                    <td className="px-2.5 py-3 text-right tabular-nums font-semibold text-ink-900">
                       {property.leads_count > 0 ? (
                         <Link
                           href={`/dashboard/leads?property=${property.id}`}
@@ -163,7 +188,7 @@ export default async function SellerPropertiesPage() {
                       )}
                     </td>
 
-                    <td className="px-4 py-3">
+                    <td className="w-px whitespace-nowrap px-3 py-3">
                       <PropertyActions property={property} />
                     </td>
                   </tr>
