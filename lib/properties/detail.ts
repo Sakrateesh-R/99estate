@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { headers } from 'next/headers';
 import { createClient, createDeferredClient } from '@/lib/supabase/server';
 import { getUser } from '@/lib/auth/session';
+import type { PropertyRef } from '@/lib/utils';
 import type { Enums, Tables } from '@/types/database.types';
 
 /**
@@ -12,7 +13,7 @@ import type { Enums, Tables } from '@/types/database.types';
  * what a buyer unlocks) and no seller contact column appears anywhere.
  */
 const DETAIL_COLUMNS = [
-  'id', 'slug', 'seller_id', 'title', 'description',
+  'id', 'slug', 'public_code', 'seller_id', 'title', 'description',
   'property_type', 'listing_type', 'price', 'is_negotiable',
   'area', 'area_unit', 'area_sqft',
   'bedrooms', 'bathrooms', 'balconies', 'floor_number', 'total_floors',
@@ -34,7 +35,15 @@ const DETAIL_COLUMNS = [
  */
 export type PropertyDetail = Omit<
   Tables<'properties'>,
-  'address' | 'rejection_reason' | 'last_renewed_at' | 'unlocks_count' | 'leads_count' | 'posted_by'
+  | 'address'
+  | 'rejection_reason'
+  | 'last_renewed_at'
+  | 'unlocks_count'
+  | 'leads_count'
+  | 'posted_by'
+  // Provenance for the coordinates, not something the page renders. Omitted
+  // here as well as unselected, so the two lists keep agreeing.
+  | 'map_url'
 >;
 
 export type PropertyImage = {
@@ -68,13 +77,15 @@ export type PropertyDetailData = {
  * Wrapped in `cache` because `generateMetadata` and the page component both
  * need it, and Next runs them separately.
  */
-export const getPropertyDetail = cache(async (propertyId: string): Promise<PropertyDetailData | null> => {
+export const getPropertyDetail = cache(async (ref: PropertyRef): Promise<PropertyDetailData | null> => {
   const supabase = await createClient();
 
+  // One query either way: the short code is the current URL form, the UUID is
+  // the one that shipped first and still has to resolve.
   const { data: property } = await supabase
     .from('properties')
     .select(DETAIL_COLUMNS)
-    .eq('id', propertyId)
+    .eq(ref.kind === 'code' ? 'public_code' : 'id', ref.value)
     .maybeSingle<PropertyDetail>();
 
   // RLS has already decided visibility: a stranger simply gets nothing back
@@ -89,11 +100,11 @@ export const getPropertyDetail = cache(async (propertyId: string): Promise<Prope
     supabase
       .from('property_images')
       .select('id, public_url, is_cover, width, height')
-      .eq('property_id', propertyId)
+      .eq('property_id', property.id)
       .order('is_cover', { ascending: false })
       .order('sort_order')
       .order('created_at'),
-    supabase.from('property_amenities').select('amenity_name').eq('property_id', propertyId),
+    supabase.from('property_amenities').select('amenity_name').eq('property_id', property.id),
     supabase
       .from('seller_public_profiles')
       .select('id, full_name, avatar_url, seller_type, member_since')
@@ -104,7 +115,7 @@ export const getPropertyDetail = cache(async (propertyId: string): Promise<Prope
           .from('saved_properties')
           .select('id')
           .eq('user_id', user.id)
-          .eq('property_id', propertyId)
+          .eq('property_id', property.id)
           .maybeSingle()
       : Promise.resolve({ data: null }),
   ]);

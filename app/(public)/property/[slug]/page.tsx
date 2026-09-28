@@ -32,7 +32,7 @@ import {
   type PropertyDetail,
 } from '@/lib/properties/detail';
 import { getContactState } from '@/lib/contacts/actions';
-import { propertyIdFromSlug, propertyPath } from '@/lib/utils';
+import { propertyRefFromSlug, propertyPath } from '@/lib/utils';
 import { formatArea, formatCount, formatDate, formatListingPrice, formatRelative } from '@/lib/format';
 import {
   FACING_LABELS,
@@ -57,25 +57,24 @@ type PageProps = { params: Promise<{ slug: string }> };
  */
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const id = propertyIdFromSlug(slug);
-  if (!id) return { title: 'Property not found' };
+  const ref = propertyRefFromSlug(slug);
+  if (!ref) return { title: 'Property not found' };
 
-  const data = await getPropertyDetail(id);
+  const data = await getPropertyDetail(ref);
   if (!data) return { title: 'Property not found', robots: { index: false, follow: false } };
 
   const { property, images } = data;
 
   /**
-   * `/property/anything-at-all-<uuid>` also serves this listing, because the id
-   * is read off the end of the segment and the words before it are ignored. The
-   * `alternates.canonical` below is what collapses those duplicates.
+   * `/property/anything-at-all-<code>` also serves this listing, because the
+   * reference is read off the end of the segment and the words before it are
+   * ignored. `alternates.canonical` still declares the real URL.
    *
-   * A 308 would be stronger, and is not available: the `(public)` layout streams
-   * its header behind Suspense, so the 200 is already sent before either this
-   * function or the page body could redirect — verified, both returned 200 with
-   * no Location header. Doing it properly means a middleware lookup on every
-   * property request, which is a poor trade against a canonical tag that already
-   * works. See SEO-AUDIT.md.
+   * Middleware now sends signed-out visitors there with a 301 as well, so the
+   * canonical tag is the backstop rather than the only defence. It could not be
+   * done from here: the `(public)` layout streams its header behind Suspense,
+   * so the 200 is already sent before this function or the page body could
+   * redirect. See SEO-AUDIT.md.
    */
   const location = [property.locality, property.city].filter(Boolean).join(', ');
   const price = formatListingPrice(property.price, property.listing_type);
@@ -115,16 +114,16 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function PropertyDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  const id = propertyIdFromSlug(slug);
-  if (!id) notFound();
+  const ref = propertyRefFromSlug(slug);
+  if (!ref) notFound();
 
-  const data = await getPropertyDetail(id);
+  const data = await getPropertyDetail(ref);
   if (!data) notFound();
 
   const { property, images, amenities, seller, isSaved, isOwnListing } = data;
 
-  // The canonical-URL redirect lives in generateMetadata, which runs before the
-  // response streams; see the note there.
+  // The canonical-URL redirect lives in middleware, which runs before the
+  // response streams; see the note in generateMetadata.
 
   const [contactState, unlockedAddress] = await Promise.all([
     getContactState(property.id),

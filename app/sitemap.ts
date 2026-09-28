@@ -48,7 +48,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const [{ data: properties }, places, inventory] = await Promise.all([
       supabase
         .from('properties')
-        .select('id, slug, updated_at, published_at')
+        .select('id, slug, public_code, updated_at, published_at')
         .eq('status', 'published')
         .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
         .order('published_at', { ascending: false, nullsFirst: false })

@@ -7,6 +7,7 @@ export type SellerPropertyRow = Pick<
   | 'id'
   | 'seller_id'
   | 'slug'
+  | 'public_code'
   | 'title'
   | 'status'
   | 'verification_status'
@@ -37,6 +38,7 @@ const SELLER_ROW_COLUMNS = [
   'id',
   'seller_id',
   'slug',
+  'public_code',
   'title',
   'status',
   'verification_status',

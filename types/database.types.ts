@@ -278,6 +278,8 @@ export type Database = {
           longitude: number | null;
           /** The Google Maps link the seller gave; provenance only, never an iframe src. */
           map_url: string | null;
+          /** Short URL identifier, 7 chars of Crockford base32. Assigned by trigger, immutable. */
+          public_code: string;
           seller_type: Database['public']['Enums']['user_role'];
           /** Canonical YouTube/Vimeo URL; constrained by properties_video_url_check. */
           video_url: string | null;
@@ -330,6 +332,8 @@ export type Database = {
           longitude?: number | null;
           /** Constrained by properties_map_url_check to Google Maps hosts. */
           map_url?: string | null;
+          /** Assigned by properties_set_public_code and immutable thereafter; never write it. */
+          public_code?: never;
           status?: Database['public']['Enums']['property_status'];
           /** Write only what lib/properties/video.ts canonicalises, or the CHECK rejects it. */
           video_url?: string | null;

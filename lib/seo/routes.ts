@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { parseLandingSlug } from '@/lib/seo/landing';
 import { KNOWN_TOP_LEVEL } from '@/lib/seo/route-segments';
-import { propertyIdFromSlug } from '@/lib/utils';
+import { propertyRefFromSlug } from '@/lib/utils';
 
 /**
  * §23 — which public paths cannot possibly resolve, decided without a database.
@@ -54,8 +54,10 @@ export function isDefinitelyNotFound(pathname: string): boolean {
   }
 
   if (segments.length === 2 && first === 'property') {
-    // `/property/<anything>` only resolves when an id is on the end of it.
-    return propertyIdFromSlug(second!) === null;
+    // `/property/<anything>` only resolves when the segment ends in something
+    // that identifies a listing — the short code, or the UUID that preceded it
+    // and still redirects.
+    return propertyRefFromSlug(second!) === null;
   }
 
   return false;

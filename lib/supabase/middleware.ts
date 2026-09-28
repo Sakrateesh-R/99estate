@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
-import { isSafeReturnPath, propertyIdFromSlug } from '@/lib/utils';
+import { isSafeReturnPath, propertyPath, propertyRefFromSlug } from '@/lib/utils';
 import { notFoundResponse } from '@/lib/seo/routes';
 import {
   DEFAULT_SIGNED_IN_PATH,
@@ -109,16 +109,45 @@ export async function updateSession(request: NextRequest) {
    * `properties_select_published` already hides anything not live.
    */
   if (!user && pathname.startsWith('/property/')) {
-    const id = propertyIdFromSlug(pathname.slice('/property/'.length));
+    const segment = pathname.slice('/property/'.length);
+    const ref = propertyRefFromSlug(segment);
 
-    if (id) {
+    if (ref) {
       const { data: listing } = await supabase
         .from('properties')
-        .select('id')
-        .eq('id', id)
+        .select('id, slug, public_code')
+        .eq(ref.kind === 'code' ? 'public_code' : 'id', ref.value)
         .maybeSingle();
 
       if (!listing) return notFoundResponse(SITE_NAME);
+
+      /**
+       * §23 — one URL per listing, and it is the short one.
+       *
+       * Listing URLs used to end in a raw UUID and now end in a seven-character
+       * code. Every one of those old links is already shared and indexed, so
+       * this sends them on with a 301 rather than serving both forever: a
+       * permanent redirect is what moves the ranking across instead of leaving
+       * two URLs competing.
+       *
+       * It also collapses `/property/anything-at-all-<code>`, which resolves
+       * because the words before the code are ignored. That used to be handled
+       * by the canonical tag alone, with a note here that a redirect was not
+       * available — the layout streams, so the page cannot set a status by the
+       * time it knows. That reasoning still holds for the page. It does not
+       * hold for middleware, which runs before any of it, and the row is
+       * already being read for the 404 above, so the redirect is free.
+       *
+       * Signed-out only, like the 404 that shares this query: it is crawlers
+       * and cold links that need it, and a signed-in request should not pay for
+       * a lookup to be told what it already sees.
+       */
+      const canonical = propertyPath(listing);
+      if (pathname !== canonical) {
+        const url = request.nextUrl.clone();
+        url.pathname = canonical;
+        return NextResponse.redirect(url, 301);
+      }
     }
   }
 

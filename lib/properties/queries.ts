@@ -14,6 +14,7 @@ import type { Enums, Tables } from '@/types/database.types';
 export const PROPERTY_CARD_COLUMNS = [
   'id',
   'slug',
+  'public_code',
   'title',
   'property_type',
   'listing_type',
@@ -39,6 +40,7 @@ export type PropertyCardData = Pick<
   Tables<'properties'>,
   | 'id'
   | 'slug'
+  | 'public_code'
   | 'title'
   | 'property_type'
   | 'listing_type'

@@ -35,6 +35,7 @@ export type UnlockedContactRow = {
   property: {
     title: string;
     slug: string | null;
+    publicCode: string | null;
     city: string;
     locality: string | null;
     price: number;
@@ -90,7 +91,7 @@ export const getUnlockedContacts = cache(async (): Promise<UnlockedContactRow[]>
    */
   const { data: properties } = await supabase
     .from('properties')
-    .select('id, title, slug, city, locality, price, listing_type, status, cover_image_url')
+    .select('id, title, slug, public_code, city, locality, price, listing_type, status, cover_image_url')
     .in('id', propertyIds);
 
   const byId = new Map(
@@ -99,6 +100,7 @@ export const getUnlockedContacts = cache(async (): Promise<UnlockedContactRow[]>
       {
         title: p.title,
         slug: p.slug,
+        publicCode: p.public_code,
         city: p.city,
         locality: p.locality,
         price: p.price,

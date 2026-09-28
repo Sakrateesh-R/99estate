@@ -104,6 +104,7 @@ export default async function UnlockedContactsPage() {
                                 href={propertyPath({
                                   id: contact.propertyId,
                                   slug: contact.property.slug,
+                                  public_code: contact.property.publicCode,
                                 })}
                                 className="hover:text-brand-700 hover:underline"
                               >
