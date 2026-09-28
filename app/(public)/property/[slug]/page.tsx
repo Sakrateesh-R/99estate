@@ -23,6 +23,7 @@ import { PropertyVideo } from '@/components/property/property-video';
 import { PropertyMap } from '@/components/property/property-map';
 import { ContactUnlockCard } from '@/components/property/contact-unlock-card';
 import { SavePropertyButton } from '@/components/property/save-property-button';
+import { SharePropertyButton } from '@/components/property/share-property-button';
 import { ReportPropertyDialog } from '@/components/property/report-property-dialog';
 import { VerifiedBadge, Badge } from '@/components/ui/badge';
 import {
@@ -274,12 +275,22 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                   </p>
                 </div>
 
-                <SavePropertyButton
-                  propertyId={property.id}
-                  initialSaved={isSaved}
-                  nextPath={canonicalPath}
-                  variant="labelled"
-                />
+                <div className="flex shrink-0 items-center gap-2">
+                  <SavePropertyButton
+                    propertyId={property.id}
+                    initialSaved={isSaved}
+                    nextPath={canonicalPath}
+                    variant="labelled"
+                  />
+                  {/* Absolute URL built here rather than from `location` in the
+                      browser, so a link shared from a preview deployment still
+                      points at the real site. */}
+                  <SharePropertyButton
+                    url={`${getSiteUrl()}${canonicalPath}`}
+                    title={property.title}
+                    price={formatListingPrice(property.price, property.listing_type)}
+                  />
+                </div>
               </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-ink-500">

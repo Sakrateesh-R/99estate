@@ -12,9 +12,11 @@ import {
   Pencil,
   Play,
   RefreshCw,
+  Share2,
   Trash2,
 } from 'lucide-react';
 import { cn, propertyPath } from '@/lib/utils';
+import { formatListingPrice } from '@/lib/format';
 import { useToast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import {
@@ -134,6 +136,44 @@ export function PropertyActions({ property }: { property: SellerPropertyRow }) {
           title: 'Verification opens soon',
           description: 'We are still building document review. Your listing stays live meanwhile.',
         });
+      },
+    });
+  }
+
+  /**
+   * Sharing belongs here more than anywhere: the seller is the one who wants
+   * their plot circulating, and this list is where they come to manage it.
+   *
+   * Only for a live listing. A draft or a paused one resolves to nothing for
+   * whoever receives the link, and handing someone a dead URL is worse than
+   * offering no share at all.
+   */
+  if (property.status === 'published') {
+    actions.push({
+      key: 'share',
+      label: 'Share listing',
+      icon: Share2,
+      run: async () => {
+        setOpen(false);
+        const url = `${window.location.origin}${propertyPath(property)}`;
+        const text = `${property.title} — ${formatListingPrice(property.price, property.listing_type)}`;
+
+        if (typeof navigator.share === 'function') {
+          try {
+            await navigator.share({ title: property.title, text, url });
+            return;
+          } catch {
+            // Dismissed. Fall through to the clipboard rather than doing
+            // nothing, so the tap is never wasted.
+          }
+        }
+
+        try {
+          await navigator.clipboard.writeText(url);
+          toast({ tone: 'success', title: 'Link copied', description: 'Paste it wherever you like.' });
+        } catch {
+          toast({ tone: 'error', title: 'Could not copy the link' });
+        }
       },
     });
   }
