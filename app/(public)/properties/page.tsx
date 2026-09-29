@@ -105,20 +105,37 @@ async function Results({ filters }: { filters: PropertyFilters }) {
   const { items, total, page, pageCount } = await searchProperties(filters);
 
   if (items.length === 0) {
+    /**
+     * The toolbar renders above the empty state, not instead of it.
+     *
+     * It carries the active-filter chips, and returning early hid exactly the
+     * controls someone needs most: with nothing found, the only way out was
+     * "Clear all filters", which throws away the keyword they just typed along
+     * with everything else. Now the chips are there to drop one filter at a
+     * time — and the toolbar already knows how to say "No properties found",
+     * so it was only ever the early return standing in the way.
+     *
+     * A keyword search makes this common rather than rare: a typo or a locality
+     * nobody has listed in lands here every time.
+     */
     return (
-      <EmptyState
-        icon={<SearchX className="size-6" />}
-        title="No properties match these filters"
-        description="Try widening your budget, clearing a filter or two, or searching a nearby locality."
-        action={
-          <>
-            <ButtonLink href="/properties" variant="outline">
-              Clear all filters
-            </ButtonLink>
-            <ButtonLink href="/dashboard/properties/new">Post a property</ButtonLink>
-          </>
-        }
-      />
+      <>
+        <ResultToolbar filters={filters} total={0} from={0} to={0} />
+        <EmptyState
+          className="mt-4"
+          icon={<SearchX className="size-6" />}
+          title="No properties match these filters"
+          description="Try widening your budget, clearing a filter or two, or searching a nearby locality."
+          action={
+            <>
+              <ButtonLink href="/properties" variant="outline">
+                Clear all filters
+              </ButtonLink>
+              <ButtonLink href="/dashboard/properties/new">Post a property</ButtonLink>
+            </>
+          }
+        />
+      </>
     );
   }
 

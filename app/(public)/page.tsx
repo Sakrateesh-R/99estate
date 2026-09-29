@@ -24,6 +24,7 @@ import { PropertyRail } from '@/components/property/property-rail';
 import { ButtonLink } from '@/components/ui/button';
 import {
   getActiveCities,
+  getSearchPlaces,
   getBrowseCategories,
   getCardMeta,
   getFeaturedProperties,
@@ -54,12 +55,13 @@ export const metadata: Metadata = {
  */
 export default async function HomePage() {
   // Independent reads — fire them together rather than waterfalling.
-  const [featured, latest, locations, categories, cities] = await Promise.all([
+  const [featured, latest, locations, categories, cities, places] = await Promise.all([
     getFeaturedProperties(8),
     getLatestProperties(8),
     getPopularLocations(12),
     getBrowseCategories(),
     getActiveCities(),
+    getSearchPlaces(),
   ]);
 
   // One batched lookup covering both rails rather than one per card.
@@ -69,7 +71,7 @@ export default async function HomePage() {
 
   return (
     <>
-      <Hero cities={cities} backdrop={featured[0]?.cover_image_url ?? latest[0]?.cover_image_url ?? null} />
+      <Hero cities={cities} places={places} backdrop={featured[0]?.cover_image_url ?? latest[0]?.cover_image_url ?? null} />
       <UspBand />
 
       {/*
@@ -126,9 +128,11 @@ export default async function HomePage() {
 
 function Hero({
   cities,
+  places,
   backdrop,
 }: {
   cities: { city: string; state: string }[];
+  places: string[];
   backdrop: string | null;
 }) {
   return (
@@ -185,7 +189,7 @@ function Hero({
         </div>
 
         <div className="mt-8 max-w-5xl">
-          <HeroSearch cities={cities} />
+          <HeroSearch cities={cities} places={places} />
         </div>
       </div>
     </section>

@@ -4,6 +4,7 @@ import * as React from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { ChevronDown, MapPin, Search, SlidersHorizontal } from 'lucide-react';
 import { cn, entriesOf, stripEmptyFields } from '@/lib/utils';
+import { KeywordField } from '@/components/property/keyword-field';
 import {
   LISTING_TYPE_LABELS,
   PROPERTY_TYPE_LABELS,
@@ -32,7 +33,13 @@ import {
  *      forward as hidden inputs. Without that, searching from the header
  *      would silently wipe a carefully built filter set.
  */
-export function HeaderSearch({ cities }: { cities: { city: string; state: string }[] }) {
+export function HeaderSearch({
+  cities,
+  places = [],
+}: {
+  cities: { city: string; state: string }[];
+  places?: string[];
+}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [expanded, setExpanded] = React.useState(false);
@@ -41,6 +48,7 @@ export function HeaderSearch({ cities }: { cities: { city: string; state: string
   const currentListing = searchParams.get('listing') ?? '';
   const currentCity = searchParams.get('city') ?? '';
   const currentMaxPrice = searchParams.get('max_price') ?? '';
+  const currentQuery = searchParams.get('q') ?? '';
 
   // The sidebar can select several property types; this select can show only
   // one. `null` means untouched, in which case the full original list is
@@ -96,7 +104,7 @@ export function HeaderSearch({ cities }: { cities: { city: string; state: string
         className={cn(
           'w-full',
           expanded ? 'mt-3 grid gap-2' : 'hidden',
-          'md:grid md:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,11rem)_auto] md:gap-0',
+          'md:grid md:grid-cols-[minmax(0,9rem)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,9rem)_auto] md:gap-0',
           'md:items-stretch md:overflow-hidden md:rounded-full md:border md:border-ink-300 md:bg-white md:shadow-sm',
         )}
       >
@@ -139,6 +147,18 @@ export function HeaderSearch({ cities }: { cities: { city: string; state: string
               </option>
             ))}
           </select>
+        </Field>
+
+        {/* The keyword, in the header too. Somebody refining a search from the
+            results page should not have to go home to type one. */}
+        <Field label="Keyword" className="md:border-r md:border-ink-200">
+          <KeywordField
+            id="header-q"
+            defaultValue={currentQuery}
+            places={places}
+            placeholder="Locality or landmark"
+            inputClassName="h-11 rounded-full border-ink-300 text-sm md:rounded-none md:border-0"
+          />
         </Field>
 
         <Field label="Property type" className="md:border-r md:border-ink-200">

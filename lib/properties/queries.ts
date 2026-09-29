@@ -248,6 +248,45 @@ export async function getBrowseCategories(): Promise<BrowseCategory[]> {
   }));
 }
 
+/**
+ * Places to suggest under the keyword box.
+ *
+ * Built from live listings rather than the curated `locations` table, which
+ * holds cities only and knows nothing about where the inventory actually is.
+ * Suggesting "Theethipalayam, Coimbatore" is worth something because a search
+ * for it returns results; suggesting a locality nobody has listed in wastes the
+ * search and teaches people the box does not work.
+ *
+ * Ordered by how many listings each place has, so the busiest areas come first,
+ * and capped — this feeds a `<datalist>`, which ships in the HTML.
+ */
+export async function getSearchPlaces(limit = 60): Promise<string[]> {
+  const supabase = await createClient();
+
+  const { data } = await supabase
+    .from('properties')
+    .select('city, locality')
+    .eq('status', 'published')
+    .or(liveExpiryFilter())
+    .limit(1000);
+
+  const tally = new Map<string, number>();
+  for (const row of data ?? []) {
+    // Both the locality and the bare city: someone typing "Coimbatore" should
+    // be offered it even though every listing there names a locality too.
+    const places = [row.locality ? `${row.locality}, ${row.city}` : null, row.city];
+    for (const place of places) {
+      if (!place) continue;
+      tally.set(place, (tally.get(place) ?? 0) + 1);
+    }
+  }
+
+  return [...tally.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([place]) => place);
+}
+
 /** Cities offered by the hero search's location picker. */
 export async function getActiveCities(): Promise<{ city: string; state: string }[]> {
   const supabase = await createClient();

@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { MapPin, Search } from 'lucide-react';
 import { cn, stripEmptyFields } from '@/lib/utils';
+import { KeywordField } from '@/components/property/keyword-field';
 import {
   PROPERTY_TYPE_LABELS,
   RENT_BUDGETS,
@@ -41,7 +42,14 @@ const PLOT_TYPES = [
  * swaps the type and budget options when the tab changes, because "Up to ₹50 L"
  * is nonsense while searching for a rental.
  */
-export function HeroSearch({ cities }: { cities: { city: string; state: string }[] }) {
+export function HeroSearch({
+  cities,
+  places = [],
+}: {
+  cities: { city: string; state: string }[];
+  /** Localities and cities that actually have live listings. */
+  places?: string[];
+}) {
   const [tab, setTab] = React.useState<Tab>('sale');
 
   const isRentalMode = tab === 'rent' || tab === 'pg';
@@ -96,6 +104,16 @@ export function HeroSearch({ cities }: { cities: { city: string; state: string }
         {tab === 'commercial' || tab === 'plots' ? (
           <input type="hidden" name="type" value={typeOptions.join(',')} />
         ) : null}
+
+        {/* Keyword first and widest, which is where every portal puts it and
+            where people look. The dropdowns below narrow a search; this one
+            starts it. */}
+        <KeywordField
+          id="hero-q"
+          places={places}
+          className="mb-2.5"
+          inputClassName="h-12 rounded-field"
+        />
 
         <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
           <label className="contents">

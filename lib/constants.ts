@@ -234,14 +234,16 @@ export const RENT_BUDGETS = [
 ] as const;
 
 /**
- * Params the header search form owns. Everything else in the URL is carried
- * forward as hidden inputs so a header search never wipes an existing filter
+ * Params the header and hero search forms own. Everything else in the URL is
+ * carried forward as hidden inputs so a search never wipes an existing filter
  * set. `page` is owned-and-omitted, which resets pagination to 1.
  *
- * `q` is deliberately NOT here: the header has no keyword field, so a typed
- * keyword must survive a header search.
+ * `q` used to be excluded on the grounds that the header had no keyword field,
+ * so a typed keyword had to survive as a hidden input. It has one now, and
+ * leaving `q` out would submit it twice — once from the visible box and once as
+ * a stale hidden copy of whatever was in the URL.
  */
-export const SEARCH_FORM_PARAMS = ['listing', 'city', 'type', 'max_price', 'page'] as const;
+export const SEARCH_FORM_PARAMS = ['listing', 'city', 'type', 'max_price', 'q', 'page'] as const;
 
 export const SORT_OPTIONS = [
   { value: 'relevance', label: 'Relevance' },

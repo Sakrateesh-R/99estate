@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getAuthContext } from '@/lib/auth/session';
 import { getDailyContactUsage, freeQuotaLabel } from '@/lib/contacts/usage';
 import { getNotificationInbox } from '@/lib/notifications/queries';
-import { getActiveCities } from '@/lib/properties/queries';
+import { getActiveCities, getSearchPlaces } from '@/lib/properties/queries';
 
 /**
  * The parts of the header that need a database round trip, split out so they can
@@ -113,8 +113,8 @@ export async function MobileAuthSlot() {
  * with in the first few hundred milliseconds anyway.
  */
 export async function HeaderSearchSlot() {
-  const cities = await getActiveCities();
-  return <HeaderSearch cities={cities} />;
+  const [cities, places] = await Promise.all([getActiveCities(), getSearchPlaces()]);
+  return <HeaderSearch cities={cities} places={places} />;
 }
 
 /**
