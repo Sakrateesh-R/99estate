@@ -287,16 +287,53 @@ export async function getSearchPlaces(limit = 60): Promise<string[]> {
     .map(([place]) => place);
 }
 
-/** Cities offered by the hero search's location picker. */
-export async function getActiveCities(): Promise<{ city: string; state: string }[]> {
+/**
+ * Cities offered by the search's location picker.
+ *
+ * Read from the listings, not from the curated `locations` table. That table
+ * was seeded with the metros this marketplace would like to be in, which left
+ * the filter almost exactly inverted: it offered eleven cities with nothing in
+ * them — Chennai, Bengaluru, Mumbai, Delhi — while hiding thirteen that had
+ * listings, including Gobichettipalayam and Kunnathur with three each.
+ *
+ * Picking a city from a *filter* should never lead to an empty page. The
+ * curated table still drives the Popular Locations rail on the home page, which
+ * is marketing and may legitimately point at markets we have not reached yet;
+ * this is not that.
+ *
+ * Busiest first, so the places with real inventory lead, then alphabetical.
+ * Deduplicated case-insensitively because "coimbatore" and "Coimbatore" are one
+ * city typed by two sellers — the most common spelling wins.
+ */
+export async function getActiveCities(limit = 60): Promise<{ city: string; state: string }[]> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from('locations')
-    .select('city, state')
-    .is('locality', null)
-    .eq('is_active', true)
-    .order('sort_order')
-    .limit(100);
 
-  return data ?? [];
+  const { data } = await supabase
+    .from('properties')
+    .select('city, state')
+    .eq('status', 'published')
+    .or(liveExpiryFilter())
+    .limit(1000);
+
+  const tally = new Map<string, { spellings: Map<string, number>; state: string; count: number }>();
+
+  for (const row of data ?? []) {
+    const city = row.city?.trim();
+    if (!city) continue;
+
+    const key = city.toLowerCase();
+    const entry = tally.get(key) ?? { spellings: new Map(), state: row.state ?? '', count: 0 };
+    entry.count += 1;
+    entry.spellings.set(city, (entry.spellings.get(city) ?? 0) + 1);
+    if (!entry.state && row.state) entry.state = row.state;
+    tally.set(key, entry);
+  }
+
+  return [...tally.entries()]
+    .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([, entry]) => ({
+      city: [...entry.spellings.entries()].sort((a, b) => b[1] - a[1])[0]![0],
+      state: entry.state,
+    }));
 }
