@@ -129,7 +129,19 @@ export function SharePropertyButton({
       {open ? (
         <div
           role="menu"
-          className="animate-fade-up absolute right-0 top-13 z-40 w-56 overflow-hidden rounded-card border border-ink-200 bg-white py-1 shadow-pop"
+          /**
+           * Anchored to the button's left edge, at every width.
+           *
+           * The usual `right-0` is wrong for this button specifically: it sits
+           * near the start of its row, so a 224px panel hanging back from its
+           * right edge ran 15px off a 375px screen, and on a laptop it landed
+           * flush against the viewport edge at left=1. Dropping down-and-right
+           * from the button keeps it comfortably inside at both — measured 113
+           * to 337 of 375, and 129 to 353 of 1280.
+           *
+           * The width cap is for anything narrower than a 375px phone.
+           */
+          className="animate-fade-up absolute left-0 top-13 z-40 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-card border border-ink-200 bg-white py-1 shadow-pop"
         >
           {items.map(({ key, label, icon: Icon, href }) => (
             <a
