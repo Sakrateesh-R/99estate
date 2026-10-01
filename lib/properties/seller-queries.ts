@@ -212,14 +212,23 @@ export async function getPropertyForEdit(
   };
 }
 
+/**
+ * The amenity vocabulary, in the order the posting step should show it.
+ *
+ * Ordered by `sort_order` alone, not by category first. The step groups by
+ * first appearance, so a global ordering is what decides which heading a seller
+ * sees at the top — approvals, then water, then access — rather than whichever
+ * category name happens to sort first alphabetically. Migration 026 assigns the
+ * numbers in blocks of ten for exactly this reason.
+ */
 export async function getAmenityOptions(): Promise<{ name: string; category: string }[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from('amenities')
     .select('name, category')
     .eq('is_active', true)
-    .order('category')
-    .order('sort_order');
+    .order('sort_order')
+    .order('name');
 
   return data ?? [];
 }

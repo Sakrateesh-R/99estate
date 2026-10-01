@@ -287,6 +287,7 @@ export function PropertyWizard({
             {step === 4 ? (
               <AmenitiesStep
                 options={amenityOptions}
+                propertyType={values.property_type}
                 selected={amenities}
                 onToggle={(name) =>
                   setAmenities((current) =>

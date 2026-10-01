@@ -5,6 +5,8 @@ import { cn, entriesOf } from '@/lib/utils';
 import { Checkbox, Field, Input, PriceInput, Select, Textarea } from '@/components/ui/field';
 import { MapLinkField } from '@/components/dashboard/property-wizard/map-link-field';
 import {
+  AMENITY_CATEGORIES_HIDDEN_FOR_LAND,
+  AMENITY_CATEGORY_LABELS,
   AREA_UNIT_LABELS,
   FACING_LABELS,
   FURNISHING_LABELS,
@@ -492,26 +494,44 @@ export function AmenitiesStep({
   options,
   selected,
   onToggle,
+  propertyType,
 }: {
   options: { name: string; category: string }[];
   selected: string[];
   onToggle: (name: string) => void;
+  /** Decides which groups apply; a plot has no lift and no clubhouse. */
+  propertyType?: string;
 }) {
+  const land = isLandType(propertyType ?? '');
+
   const grouped = React.useMemo(() => {
     const map = new Map<string, string[]>();
     for (const option of options) {
+      /**
+       * A group is hidden only when nothing in it is already ticked.
+       *
+       * Filtering outright would make an existing selection impossible to
+       * remove — a listing posted as a villa and corrected to a plot would keep
+       * "Swimming Pool" with no way to reach it. Hiding the empty ones is the
+       * decluttering; keeping the ticked ones is not losing the seller's work.
+       */
+      if (land && AMENITY_CATEGORIES_HIDDEN_FOR_LAND.includes(option.category)) {
+        if (!selected.includes(option.name)) continue;
+      }
       const list = map.get(option.category) ?? [];
       list.push(option.name);
       map.set(option.category, list);
     }
     return [...map.entries()];
-  }, [options]);
+  }, [options, land, selected]);
 
   return (
     <div className="space-y-7">
       {grouped.map(([category, names]) => (
         <div key={category}>
-          <h3 className="text-sm font-semibold capitalize text-ink-800">{category}</h3>
+          <h3 className="text-sm font-semibold capitalize text-ink-800">
+            {AMENITY_CATEGORY_LABELS[category] ?? category}
+          </h3>
           <div className="mt-3 flex flex-wrap gap-2">
             {names.map((name) => {
               const active = selected.includes(name);

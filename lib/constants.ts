@@ -53,6 +53,37 @@ export const EXPIRY_WARNING_DAYS = 7;
  */
 export const CLIENT_ERROR_RETENTION_DAYS = 30;
 
+/**
+ * Headings for the amenity groups (§12).
+ *
+ * The step used to render the raw category with `capitalize`, which gave
+ * "Approval" and "Finance" — accurate and oddly clipped. Anything missing here
+ * still falls back to that, so a new category added in SQL is never invisible.
+ */
+export const AMENITY_CATEGORY_LABELS: Record<string, string> = {
+  approval: 'Approvals and paperwork',
+  water: 'Water',
+  access: 'Access and boundary',
+  finance: 'Finance',
+  utility: 'Utilities',
+  safety: 'Safety',
+  general: 'General',
+  parking: 'Parking',
+  building: 'Building',
+  interior: 'Interior',
+  lifestyle: 'Lifestyle',
+};
+
+/**
+ * Groups that mean nothing on a plot of land.
+ *
+ * A vacant site has no lift, no modular kitchen and no clubhouse, and offering
+ * them is how the whole step came to be ignored — twenty-five options, three
+ * selections across every listing ever posted. Approvals, water and access are
+ * shown for everything, because a flat can be RERA registered too.
+ */
+export const AMENITY_CATEGORIES_HIDDEN_FOR_LAND = ['interior', 'building', 'lifestyle', 'parking'];
+
 export const PROPERTY_TYPE_LABELS: Record<Enums<'property_type'>, string> = {
   apartment: 'Apartment',
   independent_house: 'Independent House',
