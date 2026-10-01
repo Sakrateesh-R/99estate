@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BadgeCheck, Bug, Building2, ChartLine, Flag, Handshake, LayoutDashboard, Users } from 'lucide-react';
+import { BadgeCheck, Bug, Building2, CalendarClock, ChartLine, Flag, Handshake, LayoutDashboard, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { QueueCounts } from '@/lib/admin/queries';
@@ -27,6 +27,7 @@ const ITEMS: {
   { href: '/admin/reports', label: 'Reports', icon: Flag, count: (c) => c.openReports },
   { href: '/admin/verification', label: 'Verification', icon: BadgeCheck, count: (c) => c.pendingVerifications },
   { href: '/admin/users', label: 'Users', icon: Users },
+  { href: '/admin/expiring', label: 'Expiring soon', icon: CalendarClock, count: (c) => c.expiringSoon },
   { href: '/admin/insights', label: 'Insights', icon: ChartLine },
   { href: '/admin/errors', label: 'Error log', icon: Bug },
 ];

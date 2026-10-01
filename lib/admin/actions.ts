@@ -32,12 +32,16 @@ function revalidateAdmin() {
   revalidatePath('/admin/reports');
   revalidatePath('/admin/verification');
   revalidatePath('/admin/users');
+  revalidatePath('/admin/expiring');
 }
 
 /**
  * The RPCs return `jsonb` rather than throwing for business-rule failures —
  * "this listing is not pending" is an outcome, not an exception.
  */
+/** Ids arrive from a form, so they are checked before reaching the database. */
+const uuidSchema = z.string().uuid();
+
 function readOutcome(data: unknown): { ok: boolean; code: string } {
   const result = (data ?? {}) as { ok?: boolean; code?: string };
   return { ok: Boolean(result.ok), code: result.code ?? 'unknown' };
@@ -258,4 +262,50 @@ export async function sweepExpiredListings(): Promise<ActionResult<MaintenanceRe
   revalidatePath('/properties');
   revalidatePath('/');
   return { ok: true, data: result };
+}
+
+/**
+ * §18 — renews listings on behalf of owners who cannot do it themselves.
+ *
+ * `renew_property` has always allowed `is_admin()`; what was missing was a way
+ * to call it for more than one listing at a time. That matters because of how
+ * this inventory is shaped: 34 of 36 listings belong to placeholder accounts
+ * with no way to sign in, and 30 of them expire inside four days in December.
+ * Without this, keeping the site populated is an afternoon of clicking.
+ *
+ * Each id is renewed in its own call rather than in one statement, so a single
+ * listing in a state the lifecycle guard refuses — already deleted, never
+ * published — does not take the rest of the batch down with it. The caller is
+ * told how many of each.
+ */
+export async function renewListings(
+  propertyIds: string[],
+): Promise<ActionResult<{ renewed: number; failed: number }>> {
+  await requireAdmin();
+
+  const ids = [...new Set(propertyIds)].filter((id) => uuidSchema.safeParse(id).success);
+  if (ids.length === 0) return fail('No listings were selected.');
+  if (ids.length > 200) return fail('Renew at most 200 listings at a time.');
+
+  const supabase = await createClient();
+
+  let renewed = 0;
+  let failed = 0;
+
+  for (const id of ids) {
+    const { data, error } = await supabase.rpc('renew_property', { p_property_id: id });
+    const outcome = readOutcome(data);
+    if (error || !outcome.ok) failed += 1;
+    else renewed += 1;
+  }
+
+  revalidateAdmin();
+  revalidatePath('/admin/expiring');
+  revalidatePath('/dashboard/properties');
+  // A renewed listing goes back on the market, so the public surfaces change.
+  revalidatePath('/properties');
+  revalidatePath('/');
+
+  if (renewed === 0) return fail('None of those listings could be renewed.');
+  return { ok: true, data: { renewed, failed } };
 }
