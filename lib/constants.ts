@@ -45,6 +45,14 @@ export const LISTING_DURATION_DAYS = 90;
  */
 export const EXPIRY_WARNING_DAYS = 7;
 
+/**
+ * How long a browser error report is kept (§16).
+ *
+ * Long enough to see whether a failure is a pattern or a one-off, short enough
+ * that a diagnostic log never becomes a storage problem of its own.
+ */
+export const CLIENT_ERROR_RETENTION_DAYS = 30;
+
 export const PROPERTY_TYPE_LABELS: Record<Enums<'property_type'>, string> = {
   apartment: 'Apartment',
   independent_house: 'Independent House',

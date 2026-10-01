@@ -63,7 +63,7 @@ async function handle(request: NextRequest) {
     // Logged as well as returned: the scheduler's own history is usually the
     // only place anyone looks when asking whether this ran last night.
     console.info(
-      `[cron] listing sweep: expired ${result.expired}, warned ${result.warned}.`,
+      `[cron] listing sweep: expired ${result.expired}, warned ${result.warned}, pruned ${result.prunedErrors} error reports.`,
     );
 
     return NextResponse.json({ ok: true, ...result });

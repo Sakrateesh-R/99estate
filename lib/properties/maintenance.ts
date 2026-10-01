@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { EXPIRY_WARNING_DAYS } from '@/lib/constants';
+import { CLIENT_ERROR_RETENTION_DAYS, EXPIRY_WARNING_DAYS } from '@/lib/constants';
 import type { Database } from '@/types/database.types';
 
 /**
@@ -22,6 +22,8 @@ export type MaintenanceResult = {
   expired: number;
   /** Sellers sent a warning about a listing expiring soon. */
   warned: number;
+  /** Browser error reports older than the retention window, removed. */
+  prunedErrors: number;
 };
 
 /**
@@ -46,5 +48,22 @@ export async function runListingMaintenance(
   });
   if (warned.error) throw new Error(`notify_expiring_properties: ${warned.error.message}`);
 
-  return { expired: expired.data ?? 0, warned: warned.data ?? 0 };
+  /**
+   * Housekeeping, not lifecycle — so a failure here does not fail the sweep.
+   *
+   * Expiring listings is the job this endpoint exists for; trimming an error
+   * log is a courtesy that happens to share a schedule. Throwing would mean a
+   * full table of diagnostics could stop sellers' listings from expiring, which
+   * is the wrong way round.
+   */
+  const pruned = await supabase.rpc('prune_client_errors', { p_keep_days: CLIENT_ERROR_RETENTION_DAYS });
+  if (pruned.error) {
+    console.error(`[cron] prune_client_errors failed: ${pruned.error.message}`);
+  }
+
+  return {
+    expired: expired.data ?? 0,
+    warned: warned.data ?? 0,
+    prunedErrors: pruned.error ? 0 : (pruned.data ?? 0),
+  };
 }

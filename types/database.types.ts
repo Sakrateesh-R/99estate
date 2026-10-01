@@ -70,6 +70,31 @@ export type Database = {
         Relationships: [];
       };
 
+      client_errors: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          kind: Database["public"]["Enums"] extends never ? string : string;
+          message: string;
+          context: Json;
+          user_agent: string | null;
+          created_at: string;
+        };
+        /** Reported by the browser; RLS requires user_id = auth.uid(). */
+        Insert: {
+          user_id: string;
+          kind: "image_compression" | "image_upload" | "payment" | "unexpected";
+          message: string;
+          context?: Json;
+          user_agent?: string | null;
+        };
+        /** A log that can be edited is not a log: no update policy exists. */
+        Update: never;
+        Relationships: [
+          { foreignKeyName: "client_errors_user_id_fkey"; columns: ["user_id"]; referencedRelation: "profiles"; referencedColumns: ["id"] },
+        ];
+      };
+
       contact_unlocks: {
         Row: {
           id: string;
@@ -600,6 +625,8 @@ export type Database = {
       };
       expire_stale_properties: { Args: Record<string, never>; Returns: number };
       notify_expiring_properties: { Args: { p_days_ahead?: number }; Returns: number };
+      /** Admin or service role only; returns how many rows it removed. */
+      prune_client_errors: { Args: { p_keep_days?: number }; Returns: number };
       is_admin: { Args: { p_uid?: string }; Returns: boolean };
       profile_is_complete: { Args: { p_uid?: string }; Returns: boolean };
     };
