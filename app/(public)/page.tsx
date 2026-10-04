@@ -40,8 +40,23 @@ import type { Metadata } from 'next';
  * a shared link. Naming one address consolidates those into a single entry.
  */
 export const metadata: Metadata = {
-  title: `${SITE_NAME} — Property for sale, rent and PG across India`,
-  description: `Browse verified property listings free on ${SITE_NAME}. Full details, photos and location at no cost — ${FREE_DAILY_UNLOCKS} seller contacts free every day, ₹${PAID_UNLOCK_PRICE} after that. Posting is always free.`,
+  /**
+   * `absolute` because the root layout appends ` · 99Estate` to every title,
+   * and this one already opens with the brand. The live tag read
+   * "99Estate — Property for sale, rent and PG across India · 99Estate", which
+   * spends eleven characters of a limited line saying the name twice.
+   */
+  title: {
+    absolute: `${SITE_NAME} — Property for sale, rent and PG across India`,
+  },
+  /**
+   * Kept under ~155 characters, which is roughly what Google shows before
+   * truncating, and no longer claiming the listings are "verified".
+   * Verification is a per-listing status that most listings do not have, so
+   * asserting it for the whole site was untrue — the same reason the landing
+   * pages deliberately avoid the word.
+   */
+  description: `Browse every listing in full for free — photos, price and location. ${FREE_DAILY_UNLOCKS} seller contacts free every day, then ₹${PAID_UNLOCK_PRICE} each. Posting is always free.`,
   alternates: { canonical: '/' },
 };
 

@@ -46,6 +46,7 @@ import {
 import { getSiteUrl } from '@/lib/env';
 import { landingPath } from '@/lib/seo/landing';
 import { JsonLd, breadcrumbJsonLd } from '@/lib/seo/json-ld';
+import { listingMetaDescription } from '@/lib/seo/meta';
 
 type PageProps = { params: Promise<{ slug: string }> };
 
@@ -84,9 +85,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const verb = property.listing_type === 'sale' ? 'for sale' : property.listing_type === 'rent' ? 'for rent' : 'PG';
 
   const title = `${bhk}${type} ${verb} in ${location} — ${price}`;
-  const description =
-    property.description?.slice(0, 155).trim() ??
-    `${bhk}${type} ${verb} in ${location} at ${price}. View full details free on ${SITE_NAME}.`;
+  const description = listingMetaDescription(property);
 
   const canonical = propertyPath(property);
   const ogImage = images[0]?.publicUrl ?? property.cover_image_url;
