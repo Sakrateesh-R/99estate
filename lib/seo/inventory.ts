@@ -1,6 +1,6 @@
 import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
-import { landingTypeGroups, slugify } from '@/lib/seo/landing';
+import { landingTypeGroups, localityIsWorthALandingPage, slugify } from '@/lib/seo/landing';
 import type { Enums } from '@/types/database.types';
 
 /**
@@ -20,16 +20,30 @@ import type { Enums } from '@/types/database.types';
  */
 
 /**
- * Minimum published listings before a landing page earns a place in the
+ * Minimum published listings before a city landing page earns a place in the
  * sitemap.
  *
- * One, not zero — a page with a single genuine listing is a real answer to a
- * real search, and holding out for more would mean a new city is invisible
- * until it is already busy. Raise it if the index ever fills with thin pages;
- * that is a judgement about quality, which is why it is a named constant rather
- * than a literal buried in a filter.
+ * One, not zero — a city page with a single genuine listing is a real answer to
+ * a real search ("property for sale in Coonoor"), and holding out for more
+ * would mean a new city is invisible until it is already busy.
  */
 export const LANDING_MIN_LISTINGS = 1;
+
+/**
+ * The same question for a locality page, which needs a higher bar.
+ *
+ * "Property for sale in Coimbatore" with one listing is thin but honest, and
+ * the query exists. "Property for sale in Near SVB Tech Park, Kalapatti,
+ * Coimbatore" with one listing is a page nobody searches for, almost entirely
+ * template, and indistinguishable from forty others like it.
+ *
+ * The note above used to say "raise it if the index ever fills with thin
+ * pages". It did: the sitemap went from 15 URLs to 106 as inventory arrived,
+ * 64 of them landing pages and roughly fifty of those a single listing under an
+ * address line. This is that raise, applied where the problem actually is —
+ * localities, not cities.
+ */
+export const LANDING_MIN_LISTINGS_LOCALITY = 2;
 
 /** `citySlug|localitySlug|listingType|typeSlug` — '' for the absent parts. */
 type BucketKey = string;
@@ -118,7 +132,19 @@ export function landingListingCount(
   return counts.get(bucketKey(input)) ?? 0;
 }
 
-/** Whether this landing URL has earned a place in the sitemap. */
+/**
+ * Whether this landing URL has earned a place in the sitemap and the index.
+ *
+ * Three questions, and a locality page has to answer all three: is the name
+ * worth searching for, is there enough behind it, and — for the city pages —
+ * is there anything at all.
+ *
+ * A page that fails this is not broken and does not disappear. It still
+ * resolves, so breadcrumbs and any link already pointing at it keep working;
+ * it simply stops being advertised in the sitemap and carries `noindex,
+ * follow`, which lets a crawler reach the listings on it without adding the
+ * page itself to the index.
+ */
 export function landingIsWorthIndexing(
   counts: Map<BucketKey, number>,
   input: {
@@ -128,5 +154,12 @@ export function landingIsWorthIndexing(
     typeSlug?: string | null;
   },
 ): boolean {
-  return landingListingCount(counts, input) >= LANDING_MIN_LISTINGS;
+  const count = landingListingCount(counts, input);
+
+  if (!input.locality) return count >= LANDING_MIN_LISTINGS;
+
+  return (
+    localityIsWorthALandingPage(input.locality, input.city) &&
+    count >= LANDING_MIN_LISTINGS_LOCALITY
+  );
 }

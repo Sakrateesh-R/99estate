@@ -20,6 +20,7 @@ import {
   type LandingTypeGroup,
 } from '@/lib/seo/landing';
 import { resolvePlace, landingCities, localitiesIn, type ResolvedPlace } from '@/lib/seo/places';
+import { landingInventory, landingIsWorthIndexing } from '@/lib/seo/inventory';
 import { JsonLd, breadcrumbJsonLd, itemListJsonLd, faqJsonLd } from '@/lib/seo/json-ld';
 import type { Enums } from '@/types/database.types';
 
@@ -102,7 +103,17 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
   if (!r) return { title: 'Not found', robots: { index: false, follow: false } };
 
   const page = pageNumber((await searchParams).page);
-  const { total } = await searchProperties(filtersFor(r, page));
+  const [{ total }, counts] = await Promise.all([
+    searchProperties(filtersFor(r, page)),
+    landingInventory(),
+  ]);
+
+  const worthIndexing = landingIsWorthIndexing(counts, {
+    city: r.place.city,
+    locality: r.place.locality,
+    listing: r.listing,
+    typeSlug: r.typeGroup?.slug ?? null,
+  });
 
   const where = [r.place.locality, r.place.city].filter(Boolean).join(', ');
   const suffix = page > 1 ? ` — page ${page}` : '';
@@ -131,10 +142,22 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
       description,
       url: r.canonical,
     },
-    // Pages 2+ are real pages but must not compete with page one for the
-    // same query; `follow` still lets the crawler reach the listings on them.
-    // A page with nothing on it should not be indexed at all.
-    robots: page > 1 || total === 0 ? { index: false, follow: true } : undefined,
+    /**
+     * Pages 2+ are real pages but must not compete with page one for the same
+     * query; `follow` still lets the crawler reach the listings on them. A page
+     * with nothing on it should not be indexed at all.
+     *
+     * And now the same rule the sitemap uses. The two had drifted: the sitemap
+     * asked `landingIsWorthIndexing`, this asked only whether the page was
+     * empty — so a one-listing locality page built from an address line was
+     * both listed and indexable. A sitemap and a page that disagree about
+     * whether a URL belongs in the index is the exact fault this module was
+     * written to end, so it is answered in one place.
+     */
+    robots:
+      page > 1 || total === 0 || !worthIndexing
+        ? { index: false, follow: true }
+        : undefined,
     other: { 'geo.placename': where, 'geo.region': `IN-${r.place.state}` },
   };
 }

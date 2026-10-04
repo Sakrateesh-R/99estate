@@ -152,3 +152,76 @@ export function landingHeading(input: {
   const intent = input.listing === 'rent' ? 'for rent' : 'for sale';
   return `${what} ${intent} in ${where}`;
 }
+
+/**
+ * Words that mean "this is a direction to a place", not the name of one.
+ *
+ * `properties.locality` is free text and sellers use it as an address line, so
+ * it arrives holding things like "Near Sri Ramakrishna Engineering College,
+ * Vattamalaipalayam, Coimbatore". That is useful on the listing and useless as
+ * a landing page: nobody searches it, and it produces a page indistinguishable
+ * from every other one-listing page.
+ */
+const LANDMARK_WORDS = [
+  'near',
+  'behind',
+  'opposite',
+  'beside',
+  'close',
+  'next',
+  'back',
+  'front',
+  'adjacent',
+  'via',
+];
+
+/**
+ * Whether a locality is worth its own landing page, judged on the string alone.
+ *
+ * This exists because the sitemap grew from 15 URLs to 106 as inventory
+ * arrived, 64 of them landing pages and roughly fifty of those a single listing
+ * under a name no one will ever search:
+ *
+ *   /property-for-sale-in-near-sri-ramakrishna-engineering-college-vattamalaipalayam-coimbatore-coimbatore
+ *   /property-for-sale-in-meera-avenue-chikkarampalayam-tamil-nadu-641104-coimbatore
+ *   /property-for-sale-in-kozhikode-kozhikode
+ *
+ * Every one of them ~520 words of which almost all is template. A site made
+ * mostly of those reads as low quality, and that judgement lands on the pages
+ * that do deserve to rank.
+ *
+ * Rejecting them does not hide the listings: each still has its own page, still
+ * appears under its city, and the locality URL still resolves for anything
+ * already linking to it. It simply stops being advertised as a destination.
+ */
+export function localityIsWorthALandingPage(locality: string | null | undefined, city: string): boolean {
+  if (!locality) return false;
+
+  const slug = slugify(locality);
+  const citySlug = slugify(city);
+  if (!slug || !citySlug) return false;
+
+  // "Kozhikode, Kozhikode" — the locality is the city repeated.
+  if (slug === citySlug) return false;
+
+  // "…, Coimbatore" — the seller typed the city into the locality field too,
+  // which is what produces `-coimbatore-coimbatore` on the end of a URL.
+  if (slug.includes(citySlug)) return false;
+
+  // A PIN code is part of an address, never part of a locality name.
+  if (/\b\d{6}\b/.test(slug.replace(/-/g, ' '))) return false;
+
+  const words = slug.split('-').filter(Boolean);
+
+  // "Very close to Kunnathur Perundurai Main Road" is a direction, not a place.
+  if (words.some((word) => LANDMARK_WORDS.includes(word))) return false;
+
+  /**
+   * Four words is generous for a locality and short for an address line.
+   * "Sidco Housing Unit Phase 2 Kurichi" is the latter; "Periyanaickenpalayam"
+   * and "Ganapathy Palayam" are the former and both survive.
+   */
+  if (words.length > 4) return false;
+
+  return true;
+}
