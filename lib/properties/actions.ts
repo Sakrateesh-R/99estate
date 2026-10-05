@@ -287,16 +287,39 @@ export async function publishProperty(
 // ---------------------------------------------------------------------------
 
 /** Seller-driven status changes: pause, resume, mark sold/rented (§18). */
+/**
+ * Where the buyer or tenant actually came from (§18).
+ *
+ * Asked only when a listing closes, because that is the one moment the seller
+ * knows and is willing to say. `not_said` is a real answer rather than an
+ * absence — it records that we asked and they declined, which is different from
+ * never having asked.
+ */
+export const SOLD_VIA_OPTIONS = ['99estate', 'other_platform', 'offline', 'not_said'] as const;
+export type SoldVia = (typeof SOLD_VIA_OPTIONS)[number];
+
 export async function updatePropertyStatus(
   propertyId: string,
   status: Extract<Enums<'property_status'>, 'published' | 'paused' | 'sold' | 'rented' | 'pending'>,
+  soldVia?: SoldVia,
 ): Promise<ActionResult> {
   const owned = await requireOwnedProperty(propertyId);
   if (!owned.ok) return fail(owned.error);
 
+  /**
+   * The answer is only meaningful alongside a close, and only trusted from the
+   * allowlist — this is a public endpoint, so an arbitrary string arriving here
+   * would otherwise reach a column that the admin pages read back.
+   *
+   * `closed_at` is deliberately not set here. A trigger does it, so the
+   * timestamp is the same whichever path closed the listing.
+   */
+  const closing = status === 'sold' || status === 'rented';
+  const answer = closing && soldVia && SOLD_VIA_OPTIONS.includes(soldVia) ? soldVia : undefined;
+
   const { error } = await owned.supabase
     .from('properties')
-    .update({ status })
+    .update(answer ? { status, sold_via: answer } : { status })
     .eq('id', propertyId);
 
   // The lifecycle guard trigger raises 42501 with a readable message for any

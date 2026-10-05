@@ -19,6 +19,7 @@ import { cn, propertyPath } from '@/lib/utils';
 import { formatListingPrice } from '@/lib/format';
 import { useToast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/ui/dialog';
+import { MarkSoldDialog } from '@/components/dashboard/mark-sold-dialog';
 import {
   deleteProperty,
   renewProperty,
@@ -47,6 +48,7 @@ export function PropertyActions({ property }: { property: SellerPropertyRow }) {
 
   const [open, setOpen] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [confirmSold, setConfirmSold] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -108,10 +110,12 @@ export function PropertyActions({ property }: { property: SellerPropertyRow }) {
       key: 'close',
       label: property.listing_type === 'sale' ? 'Mark as sold' : 'Mark as rented',
       icon: CheckCircle2,
-      run: () =>
-        run('Update', () =>
-          updatePropertyStatus(property.id, property.listing_type === 'sale' ? 'sold' : 'rented'),
-        ),
+      // Opens the dialog rather than closing the listing outright: the one
+      // question worth asking can only be asked here, at this moment.
+      run: async () => {
+        setOpen(false);
+        setConfirmSold(true);
+      },
     });
   }
 
@@ -245,6 +249,25 @@ export function PropertyActions({ property }: { property: SellerPropertyRow }) {
           ))}
         </div>
       ) : null}
+
+      <MarkSoldDialog
+        open={confirmSold}
+        onClose={() => setConfirmSold(false)}
+        listingType={property.listing_type}
+        busy={busy}
+        onConfirm={(soldVia) => {
+          setConfirmSold(false);
+          void run(
+            property.listing_type === "sale" ? "Mark as sold" : "Mark as rented",
+            () =>
+              updatePropertyStatus(
+                property.id,
+                property.listing_type === "sale" ? "sold" : "rented",
+                soldVia,
+              ),
+          );
+        }}
+      />
 
       <ConfirmDialog
         open={confirmDelete}

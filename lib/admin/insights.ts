@@ -86,6 +86,20 @@ export type Insights = {
     users: number;
     published: number;
   };
+  /**
+   * How listings that closed say they closed (§18).
+   *
+   * Self-reported by the seller at the moment of marking sold or rented, and
+   * the only number on this page that speaks to whether the marketplace works.
+   * Views and unlocks measure interest; this measures outcome.
+   */
+  closed: {
+    total: number;
+    viaSite: number;
+    viaOtherPlatform: number;
+    offline: number;
+    notSaid: number;
+  };
   /** True when a window hit ROW_CAP, so the page can say the figures are partial. */
   truncated: boolean;
 };
@@ -232,6 +246,25 @@ export const getInsights = cache(async (): Promise<Insights> => {
     leads_count: number;
   }[];
 
+  /**
+   * One read of the closed listings. Counted here rather than with five
+   * head-count queries, because at any plausible scale the rows are fewer than
+   * the round trips would be.
+   */
+  const { data: closedRows } = await supabase
+    .from("properties")
+    .select("sold_via")
+    .not("closed_at", "is", null)
+    .limit(ROW_CAP);
+
+  const closedCounts = {
+    total: (closedRows ?? []).length,
+    viaSite: (closedRows ?? []).filter((r) => r.sold_via === "99estate").length,
+    viaOtherPlatform: (closedRows ?? []).filter((r) => r.sold_via === "other_platform").length,
+    offline: (closedRows ?? []).filter((r) => r.sold_via === "offline").length,
+    notSaid: (closedRows ?? []).filter((r) => !r.sold_via || r.sold_via === "not_said").length,
+  };
+
   return {
     today: todayStats,
     week,
@@ -256,6 +289,7 @@ export const getInsights = cache(async (): Promise<Insights> => {
       users: allUsers.count ?? 0,
       published: allPublished.count ?? 0,
     },
+    closed: closedCounts,
     truncated:
       viewRows.length >= ROW_CAP ||
       unlockRows.length >= ROW_CAP ||

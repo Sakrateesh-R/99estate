@@ -7,7 +7,7 @@ import {
 } from '@/components/admin/insight-charts';
 import { getInsights, type PeriodStats } from '@/lib/admin/insights';
 import { formatRupees } from '@/lib/format';
-import { propertyPath } from '@/lib/utils';
+import { cn, propertyPath } from '@/lib/utils';
 
 /**
  * §16 — insights.
@@ -121,6 +121,40 @@ export default async function AdminInsightsPage() {
         </table>
       </div>
 
+      {/* --- How listings closed ------------------------------------------ */}
+      <h2 className="mt-8 text-sm font-semibold text-ink-900">How listings closed</h2>
+      <p className="mt-1 text-xs text-ink-500">
+        What sellers said when they marked a listing sold or rented. Self-reported, and the only
+        figure here that speaks to whether the site produces deals rather than interest.
+      </p>
+
+      {insights.closed.total === 0 ? (
+        <p className="mt-3 rounded-card border border-ink-200 bg-white px-4 py-6 text-sm text-ink-500">
+          Nothing has been marked sold or rented yet. The question is asked at that moment, so this
+          fills in as listings close.
+        </p>
+      ) : (
+        <dl className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <ClosedStat
+            label="Through 99Estate"
+            value={insights.closed.viaSite}
+            total={insights.closed.total}
+            highlight
+          />
+          <ClosedStat
+            label="Another website"
+            value={insights.closed.viaOtherPlatform}
+            total={insights.closed.total}
+          />
+          <ClosedStat label="Offline" value={insights.closed.offline} total={insights.closed.total} />
+          <ClosedStat
+            label="Not answered"
+            value={insights.closed.notSaid}
+            total={insights.closed.total}
+          />
+        </dl>
+      )}
+
       {/* --- Top listings ------------------------------------------------- */}
       <h2 className="mt-8 text-sm font-semibold text-ink-900">Most viewed listings</h2>
       {insights.topListings.length === 0 || insights.topListings.every((l) => l.views === 0) ? (
@@ -175,6 +209,49 @@ export default async function AdminInsightsPage() {
         These figures cover listing pages only. Views of the home page, search results and static
         pages are not recorded anywhere.
       </p>
+    </div>
+  );
+}
+
+/**
+ * One line of the closed-listing split.
+ *
+ * The share matters more than the count — "3" means nothing without knowing
+ * whether it is 3 of 4 or 3 of 40 — so both are shown, with the percentage
+ * omitted when there is nothing to divide by.
+ */
+function ClosedStat({
+  label,
+  value,
+  total,
+  highlight = false,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  highlight?: boolean;
+}) {
+  const share = total > 0 ? Math.round((value / total) * 100) : 0;
+
+  return (
+    <div
+      className={cn(
+        'rounded-card border p-4',
+        highlight ? 'border-brand-200 bg-brand-50' : 'border-ink-200 bg-white',
+      )}
+    >
+      <dt className="text-xs text-ink-600">{label}</dt>
+      <dd className="mt-1 flex items-baseline gap-2">
+        <span
+          className={cn(
+            'text-xl font-bold tabular-nums',
+            highlight ? 'text-brand-800' : 'text-ink-950',
+          )}
+        >
+          {value}
+        </span>
+        <span className="text-xs text-ink-500">of {total} · {share}%</span>
+      </dd>
     </div>
   );
 }

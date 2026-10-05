@@ -305,6 +305,10 @@ export type Database = {
           map_url: string | null;
           /** Short URL identifier, 7 chars of Crockford base32. Assigned by trigger, immutable. */
           public_code: string;
+          /** Self-reported at the moment of closing; NULL means never answered. */
+          sold_via: string | null;
+          /** Stamped by trigger when status becomes sold/rented; cleared if reopened. */
+          closed_at: string | null;
           seller_type: Database['public']['Enums']['user_role'];
           /** Canonical YouTube/Vimeo URL; constrained by properties_video_url_check. */
           video_url: string | null;
@@ -359,6 +363,10 @@ export type Database = {
           map_url?: string | null;
           /** Assigned by properties_set_public_code and immutable thereafter; never write it. */
           public_code?: never;
+          /** Constrained by properties_sold_via_check; written only alongside a close. */
+          sold_via?: '99estate' | 'other_platform' | 'offline' | 'not_said' | null;
+          /** Stamped by properties_stamp_closed_at; never write it directly. */
+          closed_at?: never;
           status?: Database['public']['Enums']['property_status'];
           /** Write only what lib/properties/video.ts canonicalises, or the CHECK rejects it. */
           video_url?: string | null;
