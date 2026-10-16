@@ -303,3 +303,149 @@ export const POSTED_WITHIN_OPTIONS = [
 ] as const;
 
 export const PAGE_SIZE = 24;
+
+// ---------------------------------------------------------------------------
+// Organizations and projects (§2, §3, §5, §7, §8)
+// ---------------------------------------------------------------------------
+
+/**
+ * A company can be several of these at once, which is why `org_types` is an
+ * array rather than a single column — ABC Infra genuinely is a builder, a
+ * developer and a promoter.
+ */
+export const ORGANIZATION_TYPE_LABELS: Record<Enums<'organization_type'>, string> = {
+  owner: 'Owner',
+  agent: 'Agent',
+  broker: 'Broker',
+  builder: 'Builder',
+  promoter: 'Promoter',
+  developer: 'Developer',
+  real_estate_company: 'Real estate company',
+};
+
+/**
+ * The order is the permission ladder, widest first. Each role can do what the
+ * one below it can, and the database resolves the same ladder through
+ * `can_manage_org`, `can_manage_org_inventory` and `can_manage_org_marketing`.
+ */
+export const ORG_MEMBER_ROLE_ORDER: Enums<'org_member_role'>[] = [
+  'owner',
+  'admin',
+  'sales_manager',
+  'marketing',
+  'sales_executive',
+  'viewer',
+];
+
+export const ORG_MEMBER_ROLE_LABELS: Record<Enums<'org_member_role'>, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  sales_manager: 'Sales manager',
+  sales_executive: 'Sales executive',
+  marketing: 'Marketing',
+  viewer: 'Viewer',
+};
+
+/** What each role is actually allowed to touch, in the team list. */
+export const ORG_MEMBER_ROLE_SUMMARY: Record<Enums<'org_member_role'>, string> = {
+  owner: 'Everything, including the team and billing',
+  admin: 'Projects, inventory, leads and the team',
+  sales_manager: 'Inventory and leads',
+  sales_executive: 'Only the leads assigned to them',
+  marketing: 'Project pages, photos and amenities',
+  viewer: 'Read-only',
+};
+
+export const ORG_MEMBER_STATUS_LABELS: Record<Enums<'org_member_status'>, string> = {
+  invited: 'Invited',
+  active: 'Active',
+  suspended: 'Suspended',
+};
+
+/**
+ * §22 applied to a company or a project. Note `suspended`, which the listing
+ * enum does not have — a suspended company comes off the market entirely.
+ */
+export const ENTITY_VERIFICATION_LABELS: Record<Enums<'entity_verification_status'>, string> = {
+  unverified: 'Not verified',
+  pending: 'Verification pending',
+  verified: 'Verified',
+  rejected: 'Verification declined',
+  suspended: 'Suspended',
+};
+
+export const PROJECT_TYPE_LABELS: Record<Enums<'project_type'>, string> = {
+  apartment: 'Apartments',
+  villa: 'Villas',
+  independent_house: 'Independent houses',
+  plot: 'Plots / layout',
+  commercial: 'Commercial',
+  mixed_development: 'Mixed development',
+};
+
+/**
+ * Where construction has got to (§7). Deliberately independent of unit status
+ * and of whether the page is published: a project can be under construction
+ * while one unit is available and the next is already sold.
+ */
+export const PROJECT_STATUS_LABELS: Record<Enums<'project_status'>, string> = {
+  upcoming: 'Upcoming',
+  pre_launch: 'Pre-launch',
+  new_launch: 'New launch',
+  under_construction: 'Under construction',
+  near_completion: 'Nearing completion',
+  ready_to_move: 'Ready to move',
+  completed: 'Completed',
+  sold_out: 'Sold out',
+};
+
+/** Sequence a builder actually moves through, for the status picker. */
+export const PROJECT_STATUS_ORDER: Enums<'project_status'>[] = [
+  'upcoming',
+  'pre_launch',
+  'new_launch',
+  'under_construction',
+  'near_completion',
+  'ready_to_move',
+  'completed',
+  'sold_out',
+];
+
+export const UNIT_STATUS_LABELS: Record<Enums<'unit_status'>, string> = {
+  available: 'Available',
+  hold: 'On hold',
+  booked: 'Booked',
+  sold: 'Sold',
+  blocked: 'Blocked',
+};
+
+export const BUILDING_STATUS_LABELS: Record<Enums<'building_status'>, string> = {
+  planned: 'Planned',
+  under_construction: 'Under construction',
+  completed: 'Completed',
+  sold_out: 'Sold out',
+};
+
+/**
+ * §8 — "do not show Verified unless an admin actually verifies it". The label
+ * for `promoter_reported` has to say who said so, because the whole point of
+ * the column is that the two are not the same claim.
+ */
+export const PROGRESS_VERIFICATION_LABELS: Record<Enums<'progress_verification_status'>, string> = {
+  promoter_reported: 'Reported by the builder',
+  admin_verified: 'Verified by 99Estate',
+};
+
+export const LEAD_SOURCE_LABELS: Record<Enums<'lead_source'>, string> = {
+  contact_unlock: 'Contact unlock',
+  project_enquiry: 'Project enquiry',
+  unit_enquiry: 'Unit enquiry',
+  site_visit: 'Site visit request',
+  admin: 'Added by 99Estate',
+};
+
+/** Anti-spam cap, mirroring `max_organizations_per_user` in `app_settings`. */
+export const MAX_ORGANIZATIONS_PER_USER = 3;
+
+/** BHK choices offered for `projects.bedroom_options` (§26). */
+export const BEDROOM_OPTION_CHOICES = [1, 2, 3, 4, 5, 6] as const;

@@ -5,6 +5,7 @@ import { SiteHeader } from '@/components/layout/site-header';
 import { DashboardNav } from '@/components/dashboard/dashboard-nav';
 import { requireProfile } from '@/lib/auth/session';
 import { getLeadSummary } from '@/lib/leads/queries';
+import { getMyOrganizations } from '@/lib/organizations/queries';
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -20,7 +21,8 @@ export const metadata: Metadata = {
  */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const profile = await requireProfile();
-  const leads = await getLeadSummary();
+  // Both feed the nav, and neither depends on the other.
+  const [leads, organizations] = await Promise.all([getLeadSummary(), getMyOrganizations()]);
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -42,7 +44,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           ) : null}
 
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-[14rem_minmax(0,1fr)]">
-            <DashboardNav newLeads={leads.unactioned} />
+            <DashboardNav newLeads={leads.unactioned} isBuilder={organizations.length > 0} />
             <div className="min-w-0">{children}</div>
           </div>
         </div>
