@@ -5,9 +5,15 @@
  *
  *   npm run db:types        # supabase gen types typescript --local
  *
- * Generated columns (`is_profile_complete`, `area_sqft`, `search_vector`) are
- * present on Row but absent from Insert/Update — the database computes them
- * and refuses to be told otherwise.
+ * Generated columns (`is_profile_complete`, `area_sqft`, `is_verified`,
+ * `price_per_sqft`, `search_vector`) are present on Row but absent from
+ * Insert/Update — the database computes them and refuses to be told otherwise.
+ *
+ * So are the columns a guard trigger reverts: a verification status, an
+ * `is_featured` flag and every denormalised counter are absent from Insert and
+ * Update even though they exist on the row, because the only thing that can
+ * move them is an admin RPC. A column missing from Insert here is a rule, not
+ * an oversight.
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
@@ -118,27 +124,60 @@ export type Database = {
         ];
       };
 
+      /**
+       * One inbox for both kinds of lead. A settled ₹9 unlock fills in
+       * property_id / seller_id / contact_unlock_id; a project enquiry fills in
+       * project_id / organization_id and leaves those three NULL. Which of the
+       * two a row is, is `source` — and `leads_unlock_source_check` makes the
+       * two sets disjoint, so a project lead can never be counted as revenue.
+       */
       leads: {
         Row: {
           id: string;
-          property_id: string;
-          seller_id: string;
+          /** NULL for a project enquiry. At least one of this and project_id is set. */
+          property_id: string | null;
+          /** NULL for a project enquiry — the counterparty there is an organization. */
+          seller_id: string | null;
           buyer_id: string;
-          contact_unlock_id: string;
+          /** Non-NULL exactly when source is 'contact_unlock'. The money path. */
+          contact_unlock_id: string | null;
+          project_id: string | null;
+          /** The specific unit enquired about, if any. Survives the unit's deletion. */
+          unit_id: string | null;
+          /** Who answers this lead. Always set when project_id is. */
+          organization_id: string | null;
+          source: Database['public']['Enums']['lead_source'];
+          assigned_to: string | null;
+          /** What the buyer typed into the enquiry form, not their profile name. */
+          contact_name: string | null;
+          /**
+           * PRIVATE — the number the buyer volunteered. Distinct from
+           * profiles.mobile_number, which Rule 8 reserves for a settled unlock.
+           */
+          contact_mobile: string | null;
+          message: string | null;
           status: Database['public']['Enums']['lead_status'];
           notes: string | null;
           last_status_change_at: string;
           created_at: string;
           updated_at: string;
         };
+        /** Created only by request_contact_unlock() or submit_project_enquiry(). */
         Insert: never;
+        /** The guard trigger rejects every other column, including the buyer's own words. */
         Update: {
           status?: Database['public']['Enums']['lead_status'];
           notes?: string | null;
+          /** Managers only; and only to a member of the same organization. */
+          assigned_to?: string | null;
         };
         Relationships: [
           { foreignKeyName: 'leads_property_id_fkey'; columns: ['property_id']; referencedRelation: 'properties'; referencedColumns: ['id'] },
           { foreignKeyName: 'leads_buyer_id_fkey'; columns: ['buyer_id']; referencedRelation: 'profiles'; referencedColumns: ['id'] },
+          { foreignKeyName: 'leads_project_id_fkey'; columns: ['project_id']; referencedRelation: 'projects'; referencedColumns: ['id'] },
+          { foreignKeyName: 'leads_unit_id_fkey'; columns: ['unit_id']; referencedRelation: 'project_units'; referencedColumns: ['id'] },
+          { foreignKeyName: 'leads_organization_id_fkey'; columns: ['organization_id']; referencedRelation: 'organizations'; referencedColumns: ['id'] },
+          { foreignKeyName: 'leads_assigned_to_fkey'; columns: ['assigned_to']; referencedRelation: 'profiles'; referencedColumns: ['id'] },
         ];
       };
 
@@ -206,6 +245,123 @@ export type Database = {
         ];
       };
 
+      /**
+       * Who may act for an organization, and in what capacity. Every org-scoped
+       * RLS policy resolves through this table, so a row here is the only thing
+       * that grants any project right at all.
+       */
+      organization_members: {
+        Row: {
+          id: string;
+          organization_id: string;
+          user_id: string;
+          role: Database['public']['Enums']['org_member_role'];
+          status: Database['public']['Enums']['org_member_status'];
+          invited_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          user_id: string;
+          role?: Database['public']['Enums']['org_member_role'];
+          status?: Database['public']['Enums']['org_member_status'];
+          /** Stamped with auth.uid() by the guard trigger; never write it. */
+          invited_by?: never;
+        };
+        /**
+         * Owner/admin only, and never your own row — the guard refuses
+         * self-promotion. A constraint trigger also refuses to leave the
+         * organization without an active owner.
+         */
+        Update: {
+          role?: Database['public']['Enums']['org_member_role'];
+          status?: Database['public']['Enums']['org_member_status'];
+        };
+        Relationships: [
+          { foreignKeyName: 'organization_members_organization_id_fkey'; columns: ['organization_id']; referencedRelation: 'organizations'; referencedColumns: ['id'] },
+          { foreignKeyName: 'organization_members_user_id_fkey'; columns: ['user_id']; referencedRelation: 'profiles'; referencedColumns: ['id'] },
+          { foreignKeyName: 'organization_members_invited_by_fkey'; columns: ['invited_by']; referencedRelation: 'profiles'; referencedColumns: ['id'] },
+        ];
+      };
+
+      /**
+       * A builder / promoter / developer / agency. Public profile lives at
+       * /builders/<slug>; the non-sensitive columns are also exposed as the
+       * `builder_public_profiles` view for anonymous reads.
+       */
+      organizations: {
+        Row: {
+          id: string;
+          created_by: string | null;
+          name: string;
+          /** Assigned once on insert and stable across a rename — it is a public URL. */
+          slug: string;
+          org_types: Database['public']['Enums']['organization_type'][];
+          logo_url: string | null;
+          cover_image_url: string | null;
+          about: string | null;
+          established_year: number | null;
+          phone: string | null;
+          email: string | null;
+          website: string | null;
+          office_address: string | null;
+          locality: string | null;
+          city: string | null;
+          state: string | null;
+          country: string;
+          pincode: string | null;
+          /** A registration identifier, not a document. Shown publicly, as on a brochure. */
+          gst_number: string | null;
+          rera_number: string | null;
+          verification_status: Database['public']['Enums']['entity_verification_status'];
+          /** Generated from verification_status. There is no writable "verified" flag. */
+          is_verified: boolean;
+          verified_at: string | null;
+          admin_notes: string | null;
+          projects_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        /**
+         * Self-onboarding, gated on a complete profile. The guard trigger pins
+         * created_by to auth.uid() and caps how many one account may create
+         * (`max_organizations_per_user`).
+         */
+        Insert: {
+          id?: string;
+          name: string;
+          /** Derived from the name when omitted; pass one only to choose it explicitly. */
+          slug?: string;
+          org_types?: Database['public']['Enums']['organization_type'][];
+          logo_url?: string | null;
+          cover_image_url?: string | null;
+          about?: string | null;
+          established_year?: number | null;
+          phone?: string | null;
+          email?: string | null;
+          website?: string | null;
+          office_address?: string | null;
+          locality?: string | null;
+          city?: string | null;
+          state?: string | null;
+          country?: string;
+          pincode?: string | null;
+          gst_number?: string | null;
+          rera_number?: string | null;
+        };
+        /**
+         * Owner/admin of the organization only. verification_status and the
+         * counters are absent because the guard trigger reverts them — the
+         * badge moves only through admin_verify_organization().
+         */
+        Update: Partial<Omit<Database['public']['Tables']['organizations']['Insert'], 'id'>>;
+        Relationships: [
+          { foreignKeyName: 'organizations_created_by_fkey'; columns: ['created_by']; referencedRelation: 'profiles'; referencedColumns: ['id'] },
+        ];
+      };
+
       payments: {
         Row: {
           id: string;
@@ -270,6 +426,298 @@ export type Database = {
         ];
       };
 
+      /** Same shape as property_amenities: a name against the shared `amenities` vocabulary. */
+      project_amenities: {
+        Row: { id: string; project_id: string; amenity_name: string; created_at: string };
+        Insert: { id?: string; project_id: string; amenity_name: string };
+        Update: { amenity_name?: string };
+        Relationships: [
+          { foreignKeyName: 'project_amenities_project_id_fkey'; columns: ['project_id']; referencedRelation: 'projects'; referencedColumns: ['id'] },
+        ];
+      };
+
+      /** Towers / blocks. Never required — a plot layout has none. */
+      project_buildings: {
+        Row: {
+          id: string;
+          project_id: string;
+          name: string;
+          code: string | null;
+          total_floors: number | null;
+          total_units: number | null;
+          status: Database['public']['Enums']['building_status'];
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          name: string;
+          code?: string | null;
+          total_floors?: number | null;
+          total_units?: number | null;
+          status?: Database['public']['Enums']['building_status'];
+          sort_order?: number;
+        };
+        Update: Partial<Omit<Database['public']['Tables']['project_buildings']['Insert'], 'id' | 'project_id'>>;
+        Relationships: [
+          { foreignKeyName: 'project_buildings_project_id_fkey'; columns: ['project_id']; referencedRelation: 'projects'; referencedColumns: ['id'] },
+        ];
+      };
+
+      project_floors: {
+        Row: {
+          id: string;
+          building_id: string;
+          floor_number: number;
+          /** "Ground Floor", "Stilt" — the brochure's label, not derivable from the number. */
+          display_name: string | null;
+          created_at: string;
+        };
+        Insert: { id?: string; building_id: string; floor_number: number; display_name?: string | null };
+        Update: { floor_number?: number; display_name?: string | null };
+        Relationships: [
+          { foreignKeyName: 'project_floors_building_id_fkey'; columns: ['building_id']; referencedRelation: 'project_buildings'; referencedColumns: ['id'] },
+        ];
+      };
+
+      project_media: {
+        Row: {
+          id: string;
+          project_id: string;
+          type: Database['public']['Enums']['project_media_type'];
+          /** Object key in the `project-media` bucket. NULL for a video, which is linked. */
+          storage_path: string | null;
+          url: string;
+          title: string | null;
+          sort_order: number;
+          is_primary: boolean;
+          width: number | null;
+          height: number | null;
+          byte_size: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          type?: Database['public']['Enums']['project_media_type'];
+          /** Must start `projects/<project_id>/` or the CHECK rejects it. */
+          storage_path?: string | null;
+          url: string;
+          title?: string | null;
+          sort_order?: number;
+          is_primary?: boolean;
+          width?: number | null;
+          height?: number | null;
+          byte_size?: number | null;
+        };
+        Update: { type?: Database['public']['Enums']['project_media_type']; title?: string | null; sort_order?: number; is_primary?: boolean };
+        Relationships: [
+          { foreignKeyName: 'project_media_project_id_fkey'; columns: ['project_id']; referencedRelation: 'projects'; referencedColumns: ['id'] },
+        ];
+      };
+
+      /**
+       * Inventory. One table for flats and plots: building_id / floor_id are
+       * NULL for a layout, and layout_row / layout_col are what a visual plot
+       * map reads.
+       */
+      project_units: {
+        Row: {
+          id: string;
+          project_id: string;
+          building_id: string | null;
+          floor_id: string | null;
+          unit_number: string;
+          /** The brochure's own words ("2 BHK", "Corner Plot"). A label, not a taxonomy. */
+          unit_type: string | null;
+          property_type: Database['public']['Enums']['property_type'];
+          bedrooms: number | null;
+          bathrooms: number | null;
+          balconies: number | null;
+          built_up_area: number | null;
+          carpet_area: number | null;
+          land_area: number | null;
+          area_unit: Database['public']['Enums']['area_unit'];
+          /** Generated from whichever area this row carries, for sorting and range filters. */
+          area_sqft: number | null;
+          facing: Database['public']['Enums']['facing_direction'] | null;
+          floor_number: number | null;
+          price: number | null;
+          /** Generated. */
+          price_per_sqft: number | null;
+          maintenance_fee: number | null;
+          parking_details: string | null;
+          plot_dimensions: string | null;
+          road_width_ft: number | null;
+          is_corner: boolean;
+          /** NULL until somebody draws the layout. */
+          layout_row: number | null;
+          layout_col: number | null;
+          status: Database['public']['Enums']['unit_status'];
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        /** Owner, admin or sales manager of the organization. */
+        Insert: {
+          id?: string;
+          project_id: string;
+          /** Must belong to the same project, or the parentage trigger refuses it. */
+          building_id?: string | null;
+          /** Must belong to the given building. Requires building_id. */
+          floor_id?: string | null;
+          unit_number: string;
+          unit_type?: string | null;
+          property_type: Database['public']['Enums']['property_type'];
+          bedrooms?: number | null;
+          bathrooms?: number | null;
+          balconies?: number | null;
+          built_up_area?: number | null;
+          carpet_area?: number | null;
+          land_area?: number | null;
+          area_unit?: Database['public']['Enums']['area_unit'];
+          facing?: Database['public']['Enums']['facing_direction'] | null;
+          floor_number?: number | null;
+          price?: number | null;
+          maintenance_fee?: number | null;
+          parking_details?: string | null;
+          plot_dimensions?: string | null;
+          road_width_ft?: number | null;
+          is_corner?: boolean;
+          layout_row?: number | null;
+          layout_col?: number | null;
+          status?: Database['public']['Enums']['unit_status'];
+          description?: string | null;
+        };
+        Update: Partial<Omit<Database['public']['Tables']['project_units']['Insert'], 'id'>>;
+        Relationships: [
+          { foreignKeyName: 'project_units_project_id_fkey'; columns: ['project_id']; referencedRelation: 'projects'; referencedColumns: ['id'] },
+          { foreignKeyName: 'project_units_building_id_fkey'; columns: ['building_id']; referencedRelation: 'project_buildings'; referencedColumns: ['id'] },
+          { foreignKeyName: 'project_units_floor_id_fkey'; columns: ['floor_id']; referencedRelation: 'project_floors'; referencedColumns: ['id'] },
+        ];
+      };
+
+      /**
+       * A builder's development. Stays publicly visible when complete and sold
+       * out — it is the builder's track record, so there is deliberately no
+       * expiry and no availability condition on its read policy.
+       */
+      projects: {
+        Row: {
+          id: string;
+          organization_id: string;
+          created_by: string | null;
+          name: string;
+          slug: string;
+          /** The builder's own reference ("ABCH-P2"), unique inside the organization. */
+          project_code: string | null;
+          description: string | null;
+          project_type: Database['public']['Enums']['project_type'];
+          /** Unit-level taxonomy, shared with listings. Empty means mixed. */
+          property_types: Database['public']['Enums']['property_type'][];
+          status: Database['public']['Enums']['project_status'];
+          address: string | null;
+          locality: string | null;
+          city: string;
+          district: string | null;
+          state: string | null;
+          pincode: string | null;
+          latitude: number | null;
+          longitude: number | null;
+          map_url: string | null;
+          total_area: number | null;
+          total_area_unit: Database['public']['Enums']['area_unit'];
+          /** Generated. */
+          total_area_sqft: number | null;
+          /** Declared from the brochure. Legitimately differs from units_total. */
+          total_units: number | null;
+          /** Trigger-maintained from project_units. */
+          units_total: number;
+          units_available: number;
+          units_hold: number;
+          units_booked: number;
+          units_sold: number;
+          units_blocked: number;
+          /** The builder's stated range, never overwritten from the loaded inventory. */
+          price_min: number | null;
+          price_max: number | null;
+          bedroom_options: number[];
+          launch_date: string | null;
+          expected_completion_date: string | null;
+          actual_completion_date: string | null;
+          construction_progress_percentage: number | null;
+          construction_progress_note: string | null;
+          last_progress_update: string | null;
+          progress_updated_by: string | null;
+          /** Do not render "Verified" unless this is 'admin_verified'. */
+          progress_verification: Database['public']['Enums']['progress_verification_status'];
+          rera_number: string | null;
+          verification_status: Database['public']['Enums']['entity_verification_status'];
+          /** Generated from verification_status. */
+          is_verified: boolean;
+          verified_at: string | null;
+          admin_notes: string | null;
+          is_featured: boolean;
+          /** Whether the page is live. Distinct from `status`, which is construction. */
+          is_published: boolean;
+          published_at: string | null;
+          cover_image_url: string | null;
+          views_count: number;
+          leads_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        /** Owner or admin of the organization, with a complete profile. */
+        Insert: {
+          id?: string;
+          organization_id: string;
+          name: string;
+          /** Derived from name + locality + city when omitted. */
+          slug?: string;
+          project_code?: string | null;
+          description?: string | null;
+          project_type: Database['public']['Enums']['project_type'];
+          property_types?: Database['public']['Enums']['property_type'][];
+          status?: Database['public']['Enums']['project_status'];
+          address?: string | null;
+          locality?: string | null;
+          city: string;
+          district?: string | null;
+          state?: string | null;
+          pincode?: string | null;
+          latitude?: number | null;
+          longitude?: number | null;
+          /** Constrained to Google Maps hosts, as properties.map_url is. */
+          map_url?: string | null;
+          total_area?: number | null;
+          total_area_unit?: Database['public']['Enums']['area_unit'];
+          total_units?: number | null;
+          price_min?: number | null;
+          price_max?: number | null;
+          bedroom_options?: number[];
+          launch_date?: string | null;
+          expected_completion_date?: string | null;
+          actual_completion_date?: string | null;
+          construction_progress_percentage?: number | null;
+          construction_progress_note?: string | null;
+          /** published_at is stamped by the guard when this first becomes true. */
+          is_published?: boolean;
+          rera_number?: string | null;
+        };
+        /**
+         * Marketing role and above. The admin-managed columns
+         * (verification_status, is_featured, progress_verification) and every
+         * counter are absent because the guard trigger reverts them.
+         */
+        Update: Partial<Omit<Database['public']['Tables']['projects']['Insert'], 'id' | 'organization_id'>>;
+        Relationships: [
+          { foreignKeyName: 'projects_organization_id_fkey'; columns: ['organization_id']; referencedRelation: 'organizations'; referencedColumns: ['id'] },
+          { foreignKeyName: 'projects_created_by_fkey'; columns: ['created_by']; referencedRelation: 'profiles'; referencedColumns: ['id'] },
+        ];
+      };
+
       properties: {
         Row: {
           id: string;
@@ -314,6 +762,10 @@ export type Database = {
           video_url: string | null;
           /** The admin who listed this on the seller's behalf; NULL if self-posted. */
           posted_by: string | null;
+          /** Optional. Set when this listing is a unit in a project; NULL for every independent listing. */
+          project_id: string | null;
+          /** Optional. The company this was posted for; NULL when an owner posted it themselves. */
+          organization_id: string | null;
           status: Database['public']['Enums']['property_status'];
           verification_status: Database['public']['Enums']['verification_status'];
           is_featured: boolean;
@@ -372,10 +824,16 @@ export type Database = {
           video_url?: string | null;
           /** Admin-only; pinned to NULL for everyone else by properties_guard_posted_by. */
           posted_by?: string | null;
+          /** Requires inventory rights on the project, or the link guard refuses it. */
+          project_id?: string | null;
+          /** Requires membership of that organization. */
+          organization_id?: string | null;
         };
         Update: Partial<Omit<Database['public']['Tables']['properties']['Insert'], 'seller_id'>>;
         Relationships: [
           { foreignKeyName: 'properties_seller_id_fkey'; columns: ['seller_id']; referencedRelation: 'profiles'; referencedColumns: ['id'] },
+          { foreignKeyName: 'properties_project_id_fkey'; columns: ['project_id']; referencedRelation: 'projects'; referencedColumns: ['id'] },
+          { foreignKeyName: 'properties_organization_id_fkey'; columns: ['organization_id']; referencedRelation: 'organizations'; referencedColumns: ['id'] },
         ];
       };
 
@@ -570,7 +1028,11 @@ export type Database = {
         Relationships: [];
       };
 
-      /** Lead inbox for the listing owner, including the buyer contact earned. */
+      /**
+       * Lead inbox for a listing owner or an organization, including the buyer
+       * contact they are entitled to. Already filtered to auth.uid() inside the
+       * view, so no extra WHERE is needed — and none will widen it.
+       */
       lead_details: {
         Row: {
           id: string | null;
@@ -583,18 +1045,63 @@ export type Database = {
           last_status_change_at: string | null;
           created_at: string | null;
           updated_at: string | null;
+          project_id: string | null;
+          unit_id: string | null;
+          organization_id: string | null;
+          source: Database['public']['Enums']['lead_source'] | null;
+          assigned_to: string | null;
+          message: string | null;
           buyer_name: string | null;
+          /**
+           * The profile number when a settled unlock backs the lead, otherwise
+           * only what the buyer typed into the enquiry form. Never both.
+           */
           buyer_mobile: string | null;
           buyer_avatar: string | null;
+          contact_display_name: string | null;
           property_title: string | null;
           property_slug: string | null;
+          property_public_code: string | null;
           property_city: string | null;
           property_locality: string | null;
           property_price: number | null;
           listing_type: Database['public']['Enums']['listing_type'] | null;
+          project_name: string | null;
+          project_slug: string | null;
+          project_city: string | null;
+          project_locality: string | null;
+          unit_number: string | null;
+          unit_type: string | null;
+          unit_price: number | null;
+          organization_name: string | null;
+          organization_slug: string | null;
           unlock_was_free: boolean | null;
           unlock_amount: number | null;
           unlocked_at: string | null;
+        };
+        Relationships: [];
+      };
+
+      /** Non-sensitive organization fields, safe for anonymous reads. No phone, email or GST. */
+      builder_public_profiles: {
+        Row: {
+          id: string | null;
+          name: string | null;
+          slug: string | null;
+          org_types: Database['public']['Enums']['organization_type'][] | null;
+          logo_url: string | null;
+          cover_image_url: string | null;
+          about: string | null;
+          established_year: number | null;
+          city: string | null;
+          state: string | null;
+          locality: string | null;
+          website: string | null;
+          rera_number: string | null;
+          verification_status: Database['public']['Enums']['entity_verification_status'] | null;
+          is_verified: boolean | null;
+          projects_count: number | null;
+          member_since: string | null;
         };
         Relationships: [];
       };
@@ -637,6 +1144,55 @@ export type Database = {
       prune_client_errors: { Args: { p_keep_days?: number }; Returns: number };
       is_admin: { Args: { p_uid?: string }; Returns: boolean };
       profile_is_complete: { Args: { p_uid?: string }; Returns: boolean };
+
+      // ---- Organizations and projects ------------------------------------
+      /**
+       * The only way a project enquiry becomes a lead. Resolves the owning
+       * organization server-side, notifies it, and is idempotent — pressing the
+       * button twice updates the enquiry rather than filing a second one.
+       */
+      submit_project_enquiry: {
+        Args: {
+          p_project_id: string;
+          p_unit_id?: string | null;
+          p_contact_name?: string | null;
+          p_contact_mobile?: string | null;
+          p_message?: string | null;
+        };
+        Returns: Json;
+      };
+      /** Callable anonymously, as record_property_view is. */
+      record_project_view: { Args: { p_project_id: string }; Returns: undefined };
+      admin_verify_organization: {
+        Args: {
+          p_organization_id: string;
+          p_status: Database['public']['Enums']['entity_verification_status'];
+          p_notes?: string | null;
+        };
+        Returns: Json;
+      };
+      admin_verify_project: {
+        Args: {
+          p_project_id: string;
+          p_status: Database['public']['Enums']['entity_verification_status'];
+          p_notes?: string | null;
+        };
+        Returns: Json;
+      };
+      /** The only thing that can mark reported construction progress as verified. */
+      admin_verify_project_progress: { Args: { p_project_id: string; p_verified?: boolean }; Returns: Json };
+      /** NULL when the user is not an active member. */
+      org_role_of: {
+        Args: { p_org_id: string; p_uid?: string };
+        Returns: Database['public']['Enums']['org_member_role'] | null;
+      };
+      is_org_member: { Args: { p_org_id: string; p_uid?: string }; Returns: boolean };
+      /** Owner or admin: the team, the company profile, creating and deleting projects. */
+      can_manage_org: { Args: { p_org_id: string; p_uid?: string }; Returns: boolean };
+      /** The above plus sales manager: inventory and leads. */
+      can_manage_org_inventory: { Args: { p_org_id: string; p_uid?: string }; Returns: boolean };
+      /** The above plus marketing: the project record, its media and its amenities. */
+      can_manage_org_marketing: { Args: { p_org_id: string; p_uid?: string }; Returns: boolean };
     };
 
     Enums: {
@@ -677,8 +1233,17 @@ export type Database = {
         | 'south_west';
       property_status: 'draft' | 'pending' | 'published' | 'paused' | 'sold' | 'rented' | 'expired' | 'rejected';
       verification_status: 'unverified' | 'pending' | 'verified' | 'rejected';
+      /**
+       * Organizations and projects, NOT properties. A separate type from
+       * `verification_status` on purpose: `suspended` must not become a legal
+       * verification state for a listing, which nothing in the listing code
+       * handles.
+       */
+      entity_verification_status: 'unverified' | 'pending' | 'verified' | 'rejected' | 'suspended';
       payment_status: 'created' | 'pending' | 'success' | 'failed' | 'refunded';
       lead_status: 'new' | 'contacted' | 'interested' | 'site_visit' | 'negotiation' | 'closed' | 'not_interested';
+      /** How a lead came to exist. Only `contact_unlock` means ₹9 changed hands. */
+      lead_source: 'contact_unlock' | 'project_enquiry' | 'unit_enquiry' | 'site_visit' | 'admin';
       report_reason:
         | 'fake_property'
         | 'duplicate'
@@ -700,6 +1265,43 @@ export type Database = {
         | 'verification'
         | 'saved_property'
         | 'system';
+
+      // ---- Organizations and projects ------------------------------------
+      /** One company can be several of these at once; `org_types` is an array. */
+      organization_type:
+        | 'owner'
+        | 'agent'
+        | 'broker'
+        | 'builder'
+        | 'promoter'
+        | 'developer'
+        | 'real_estate_company';
+      org_member_role: 'owner' | 'admin' | 'sales_manager' | 'sales_executive' | 'marketing' | 'viewer';
+      org_member_status: 'invited' | 'active' | 'suspended';
+      project_type: 'apartment' | 'villa' | 'independent_house' | 'plot' | 'commercial' | 'mixed_development';
+      /** Where construction has got to. Independent of unit status and of is_published. */
+      project_status:
+        | 'upcoming'
+        | 'pre_launch'
+        | 'new_launch'
+        | 'under_construction'
+        | 'near_completion'
+        | 'ready_to_move'
+        | 'completed'
+        | 'sold_out';
+      unit_status: 'available' | 'hold' | 'booked' | 'sold' | 'blocked';
+      project_media_type:
+        | 'cover'
+        | 'gallery'
+        | 'floor_plan'
+        | 'master_plan'
+        | 'brochure'
+        | 'video'
+        | 'construction_update'
+        | 'other';
+      /** Never print "Verified" for `promoter_reported` — only an admin RPC sets the other. */
+      progress_verification_status: 'promoter_reported' | 'admin_verified';
+      building_status: 'planned' | 'under_construction' | 'completed' | 'sold_out';
     };
 
     CompositeTypes: Record<string, never>;

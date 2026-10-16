@@ -64,6 +64,16 @@ async function main() {
   let seededSellerId = null;
   const seededPropertyIds = [];
 
+  /**
+   * The builder/promoter fixtures, declared out here so the cleanup in the
+   * `finally` can reach them. `organizations.created_by` is ON DELETE SET NULL,
+   * so deleting the builder account would leave the company and its published
+   * projects standing on a live database — the organization has to be removed
+   * explicitly, and its cascade takes the projects, inventory and leads.
+   */
+  let builderUserId = null;
+  const createdOrgIds = [];
+
   async function loadProperties() {
     const { data, error } = await admin
       .from('properties')
@@ -911,6 +921,596 @@ async function main() {
       }
     }
 
+    // --- §2–§29: organizations, projects, inventory and project leads -------
+    //
+    // Requires migrations 20261007090000 and 20261007090100. Every assertion
+    // here is a rule the database is meant to hold on its own, exercised by a
+    // client holding nothing but the anon key.
+    //
+    // The shape of the fixture matters: the builder account and the buyer
+    // account are different people, because a member enquiring about their own
+    // project is a case the RPC refuses by design — so a single account could
+    // not exercise both sides.
+    {
+      const probe = await admin.from('organizations').select('id').limit(1);
+
+      if (probe.error) {
+        check('migrations 029/030 are applied', false, probe.error.message);
+      } else {
+        const builderEmail = `verify.builder.${stamp}@99estate.dev`;
+        const builderPassword = `Verify!${stamp}`;
+        const { data: builderAccount, error: builderError } = await admin.auth.admin.createUser({
+          email: builderEmail,
+          password: builderPassword,
+          email_confirm: true,
+          user_metadata: { full_name: 'Verification Builder' },
+        });
+        if (builderError) throw new Error(`create builder account: ${builderError.message}`);
+        builderUserId = builderAccount.user.id;
+
+        // Registering a company is gated on the same complete profile that
+        // posting a listing is.
+        await admin.from('profiles').update({ mobile_number: '9000000196' }).eq('id', builderUserId);
+
+        const builder = createClient(url, anonKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { error: builderSignIn } = await builder.auth.signInWithPassword({
+          email: builderEmail,
+          password: builderPassword,
+        });
+        if (builderSignIn) throw new Error(`sign in as builder: ${builderSignIn.message}`);
+
+        const anonProjects = createClient(url, anonKey, { auth: { persistSession: false } });
+
+        // --- §2: onboarding, and the pins on it ----------------------------
+        //
+        // The three admin-managed values are passed deliberately. They are
+        // absent from the Insert type in types/database.types.ts, but a type is
+        // a promise to the app and not a defence — what has to hold is that the
+        // database flattens them when something writes around it.
+        const org = await builder
+          .from('organizations')
+          .insert({
+            name: `Verification Builders ${stamp}`,
+            org_types: ['builder', 'developer', 'promoter'],
+            city: 'Karur',
+            phone: '9000000196',
+            verification_status: 'verified',
+            projects_count: 99,
+          })
+          .select('id, slug, created_by, verification_status, is_verified, projects_count')
+          .maybeSingle();
+
+        check('a complete profile can register a company', Boolean(org.data?.id),
+          org.error?.message ?? 'no row returned');
+        if (org.data?.id) createdOrgIds.push(org.data.id);
+
+        check('the company is given a URL slug of its own',
+          /^[a-z0-9]+(-[a-z0-9]+)*$/.test(String(org.data?.slug)), String(org.data?.slug));
+        check('the registrant is recorded as the creator', org.data?.created_by === builderUserId,
+          String(org.data?.created_by));
+
+        // §22. A company that can award itself the badge is the one thing the
+        // badge must never be able to mean.
+        check('a company cannot register itself as verified',
+          org.data?.verification_status === 'unverified' && org.data?.is_verified === false,
+          `${org.data?.verification_status} is_verified=${org.data?.is_verified}`);
+        check('the project counter cannot be seeded by the client', org.data?.projects_count === 0,
+          String(org.data?.projects_count));
+
+        // --- §3: the team ---------------------------------------------------
+        const membership = await builder
+          .from('organization_members')
+          .select('id, user_id, role, status')
+          .eq('organization_id', org.data?.id);
+        check('the registrant becomes the active owner',
+          (membership.data ?? []).some(
+            (m) => m.user_id === builderUserId && m.role === 'owner' && m.status === 'active',
+          ),
+          membership.error?.message ?? JSON.stringify(membership.data));
+
+        const selfDemote = await builder
+          .from('organization_members')
+          .update({ role: 'viewer' })
+          .eq('organization_id', org.data?.id)
+          .eq('user_id', builderUserId)
+          .select('role')
+          .maybeSingle();
+        check('nobody can change their own role', selfDemote.error !== null,
+          selfDemote.error ? selfDemote.error.code : `role=${selfDemote.data?.role}`);
+
+        /**
+         * Without this the company is left in the state the seed trigger exists
+         * to prevent — unmanageable, with no insert to hang a fix on, and only
+         * a platform admin able to recover it.
+         */
+        const abandon = await builder
+          .from('organization_members')
+          .delete()
+          .eq('organization_id', org.data?.id)
+          .eq('user_id', builderUserId)
+          .select('id');
+        check('a company cannot be left without an active owner', abandon.error !== null,
+          abandon.error ? abandon.error.code : 'DELETE WAS ALLOWED');
+
+        const selfVerify = await builder
+          .from('organizations')
+          .update({ verification_status: 'verified' })
+          .eq('id', org.data?.id)
+          .select('verification_status')
+          .maybeSingle();
+        check('an owner cannot verify their own company', selfVerify.error !== null,
+          selfVerify.error ? selfVerify.error.code : `status=${selfVerify.data?.verification_status}`);
+
+        const rpcAsOwner = await builder.rpc('admin_verify_organization', {
+          p_organization_id: org.data?.id,
+          p_status: 'verified',
+        });
+        check('the verification RPC refuses a non-admin', rpcAsOwner.error?.code === '42501',
+          rpcAsOwner.error ? rpcAsOwner.error.code : 'RPC WAS ALLOWED');
+
+        // --- §5: the project record -----------------------------------------
+        const project = await builder
+          .from('projects')
+          .insert({
+            organization_id: org.data?.id,
+            name: `Green Valley ${stamp}`,
+            project_type: 'plot',
+            city: 'Karur',
+            locality: 'Thanthoni',
+            status: 'under_construction',
+            total_units: 120,
+            price_min: 5500000,
+            price_max: 8200000,
+            construction_progress_percentage: 40,
+            is_featured: true,
+            verification_status: 'verified',
+            progress_verification: 'admin_verified',
+            units_total: 500,
+            views_count: 9999,
+          })
+          .select(
+            'id, slug, is_published, is_featured, verification_status, progress_verification, units_total, views_count',
+          )
+          .maybeSingle();
+
+        check('an owner can create a project', Boolean(project.data?.id),
+          project.error?.message ?? 'no row returned');
+        check('the project slug folds in the locality and city',
+          String(project.data?.slug).includes('thanthoni-karur'), String(project.data?.slug));
+        check('a project cannot launch itself featured or verified',
+          project.data?.is_featured === false && project.data?.verification_status === 'unverified',
+          `featured=${project.data?.is_featured} status=${project.data?.verification_status}`);
+        // §8 — the entire reason this is a separate column from the percentage.
+        check('reported construction progress is not verified progress',
+          project.data?.progress_verification === 'promoter_reported',
+          String(project.data?.progress_verification));
+        check('the inventory and view counters cannot be seeded by the client',
+          project.data?.units_total === 0 && project.data?.views_count === 0,
+          `units=${project.data?.units_total} views=${project.data?.views_count}`);
+        check('a new project is not published', project.data?.is_published === false,
+          String(project.data?.is_published));
+
+        const intruder = await user
+          .from('projects')
+          .insert({
+            organization_id: org.data?.id,
+            name: `Squatter ${stamp}`,
+            project_type: 'plot',
+            city: 'Karur',
+          })
+          .select('id');
+        check('a non-member cannot create a project for a company', intruder.error !== null,
+          intruder.error ? intruder.error.code : 'INSERT WAS ALLOWED');
+
+        // §17 — the link is optional, but claiming a company you do not act for
+        // would borrow credibility the listing has not earned.
+        const borrowed = await user
+          .from('properties')
+          .insert({
+            seller_id: testUserId,
+            title: 'Borrowed credibility',
+            property_type: 'apartment',
+            listing_type: 'sale',
+            price: 4100000,
+            city: 'Karur',
+            organization_id: org.data?.id,
+          })
+          .select('id');
+        check('a seller cannot attach their listing to a company they do not act for',
+          borrowed.error !== null, borrowed.error ? borrowed.error.code : 'INSERT WAS ALLOWED');
+
+        // --- Publication, and §18's deliberate absence ----------------------
+        const hidden = await anonProjects.from('projects').select('id').eq('id', project.data?.id);
+        check('an unpublished project is invisible to the public', (hidden.data ?? []).length === 0,
+          `rows=${hidden.data?.length ?? 0}`);
+
+        const published = await builder
+          .from('projects')
+          .update({ is_published: true })
+          .eq('id', project.data?.id)
+          .select('is_published, published_at')
+          .maybeSingle();
+        check('publishing a project stamps published_at',
+          published.data?.is_published === true && Boolean(published.data?.published_at),
+          published.error?.message ?? JSON.stringify(published.data));
+
+        const live = await anonProjects.from('projects').select('id').eq('id', project.data?.id);
+        check('a published project is public', (live.data ?? []).length === 1,
+          `rows=${live.data?.length ?? 0}`);
+
+        /**
+         * §18, which the read policy expresses by having no availability or
+         * expiry condition at all. A finished, sold-out project is the builder's
+         * track record and must not drop out of search the way an expired
+         * listing does — so this is the assertion that would catch somebody
+         * "tidying up" by adding the condition a listing has.
+         */
+        await builder.from('projects').update({ status: 'sold_out' }).eq('id', project.data?.id);
+        const soldOut = await anonProjects.from('projects').select('id').eq('id', project.data?.id);
+        check('a completed, sold-out project stays public', (soldOut.data ?? []).length === 1,
+          `rows=${soldOut.data?.length ?? 0}`);
+        await builder
+          .from('projects').update({ status: 'under_construction' }).eq('id', project.data?.id);
+
+        // --- §11–§16: one inventory table for flats and plots ---------------
+        const building = await builder
+          .from('project_buildings')
+          .insert({ project_id: project.data?.id, name: 'Tower A', total_floors: 12 })
+          .select('id')
+          .maybeSingle();
+        check('a project can hold a building', Boolean(building.data?.id),
+          building.error?.message ?? 'no row returned');
+
+        const floor = await builder
+          .from('project_floors')
+          .insert({ building_id: building.data?.id, floor_number: 1, display_name: '1st Floor' })
+          .select('id')
+          .maybeSingle();
+        check('a building can hold a floor', Boolean(floor.data?.id),
+          floor.error?.message ?? 'no row returned');
+
+        // §15 — "do not force building/floor structure on plots".
+        const plot = await builder
+          .from('project_units')
+          .insert({
+            project_id: project.data?.id,
+            unit_number: 'P-1',
+            property_type: 'residential_plot',
+            land_area: 2400,
+            area_unit: 'sqft',
+            price: 5500000,
+            plot_dimensions: '40x60',
+            is_corner: true,
+          })
+          .select('id, area_sqft, price_per_sqft')
+          .maybeSingle();
+        check('a plot needs neither a building nor a floor', Boolean(plot.data?.id),
+          plot.error?.message ?? 'no row returned');
+        check('a unit gets one comparable area and a price per sqft',
+          Number(plot.data?.area_sqft) === 2400 && Number(plot.data?.price_per_sqft) > 0,
+          `sqft=${plot.data?.area_sqft} psf=${plot.data?.price_per_sqft}`);
+
+        const flat = await builder
+          .from('project_units')
+          .insert({
+            project_id: project.data?.id,
+            building_id: building.data?.id,
+            floor_id: floor.data?.id,
+            unit_number: 'A101',
+            unit_type: '2 BHK',
+            property_type: 'apartment',
+            bedrooms: 2,
+            built_up_area: 1150,
+            price: 6200000,
+          })
+          .select('id')
+          .maybeSingle();
+        check('a flat can sit on a floor of a building', Boolean(flat.data?.id),
+          flat.error?.message ?? 'no row returned');
+
+        const floating = await builder
+          .from('project_units')
+          .insert({
+            project_id: project.data?.id,
+            floor_id: floor.data?.id,
+            unit_number: 'A102',
+            property_type: 'apartment',
+          })
+          .select('id');
+        check('a unit cannot have a floor without a building', floating.error !== null,
+          floating.error ? floating.error.code : 'INSERT WAS ALLOWED');
+
+        /**
+         * A second project, left unpublished, doing double duty: its building is
+         * what proves the parentage trigger bites, and the project itself is
+         * what proves an unpublished project cannot be enquired about.
+         *
+         * The foreign keys alone cannot say this — they prove the building
+         * exists, not that it is this project's building.
+         */
+        const other = await builder
+          .from('projects')
+          .insert({
+            organization_id: org.data?.id,
+            name: `Blue Ridge ${stamp}`,
+            project_type: 'apartment',
+            city: 'Erode',
+          })
+          .select('id')
+          .maybeSingle();
+        const otherBuilding = await builder
+          .from('project_buildings')
+          .insert({ project_id: other.data?.id, name: 'Tower Z' })
+          .select('id')
+          .maybeSingle();
+        const otherUnit = await builder
+          .from('project_units')
+          .insert({ project_id: other.data?.id, unit_number: 'Z-1', property_type: 'apartment' })
+          .select('id')
+          .maybeSingle();
+
+        const crossed = await builder
+          .from('project_units')
+          .insert({
+            project_id: project.data?.id,
+            building_id: otherBuilding.data?.id,
+            unit_number: 'Z1',
+            property_type: 'apartment',
+          })
+          .select('id');
+        check("a unit cannot be placed in another project's tower", crossed.error !== null,
+          crossed.error ? crossed.error.code : 'INSERT WAS ALLOWED');
+
+        await builder.from('project_units').update({ status: 'sold' }).eq('id', flat.data?.id);
+        const counted = await builder
+          .from('projects')
+          .select('units_total, units_available, units_sold, total_units')
+          .eq('id', project.data?.id)
+          .maybeSingle();
+        check('the project counts its own inventory',
+          counted.data?.units_total === 2 &&
+            counted.data?.units_available === 1 &&
+            counted.data?.units_sold === 1,
+          counted.error?.message ?? JSON.stringify(counted.data));
+        // The brochure figure and the loaded inventory legitimately differ, and
+        // the counters must not overwrite what the builder declared.
+        check('the declared unit count survives the inventory count',
+          counted.data?.total_units === 120, String(counted.data?.total_units));
+
+        // --- §29: an enquiry becomes a lead ---------------------------------
+        const enquiry = await user.rpc('submit_project_enquiry', {
+          p_project_id: project.data?.id,
+          p_unit_id: plot.data?.id,
+          p_contact_name: 'Verification Buyer',
+          // Deliberately not the number on this buyer's profile, and written
+          // the way somebody actually types it. Rule 8 reserves the profile
+          // number for a settled unlock, so the two must not be interchangeable.
+          p_contact_mobile: '+91 90000 00111',
+          p_message: 'Is P-1 still available?',
+        });
+        check('a buyer can enquire about a unit',
+          enquiry.data?.ok === true && enquiry.data?.code === 'received',
+          enquiry.error?.message ?? JSON.stringify(enquiry.data));
+
+        await user.rpc('submit_project_enquiry', {
+          p_project_id: project.data?.id,
+          p_unit_id: plot.data?.id,
+          p_contact_name: 'Verification Buyer',
+          p_contact_mobile: '9000000111',
+        });
+        const { count: enquiryLeads } = await admin
+          .from('leads')
+          .select('id', { count: 'exact', head: true })
+          .eq('project_id', project.data?.id);
+        check('pressing enquire twice does not file two leads', enquiryLeads === 1,
+          `leads=${enquiryLeads}`);
+
+        const stored = await admin
+          .from('leads')
+          .select('message, source, contact_mobile, contact_unlock_id, seller_id, property_id')
+          .eq('project_id', project.data?.id)
+          .maybeSingle();
+        // An empty message box on the repeat must not wipe what was said first.
+        check('a repeat enquiry does not erase the first message',
+          stored.data?.message === 'Is P-1 still available?', String(stored.data?.message));
+        /**
+         * The one that protects the revenue reports: a project lead carrying
+         * `contact_unlock` would read as though ₹9 had changed hands.
+         */
+        check('a unit enquiry is labelled as one, not as a paid unlock',
+          stored.data?.source === 'unit_enquiry' && stored.data?.contact_unlock_id === null,
+          `source=${stored.data?.source} unlock=${stored.data?.contact_unlock_id}`);
+        check('a project lead has no listing and no individual seller',
+          stored.data?.property_id === null && stored.data?.seller_id === null,
+          JSON.stringify(stored.data));
+
+        const inbox = await builder
+          .from('lead_details')
+          .select('id, source, buyer_mobile, contact_display_name, project_name, unit_number, organization_name')
+          .eq('project_id', project.data?.id);
+        check('the company sees the enquiry in its inbox', (inbox.data ?? []).length === 1,
+          inbox.error?.message ?? `rows=${inbox.data?.length ?? 0}`);
+        /**
+         * Rule 8 in one assertion, and the reason `lead_details` has a CASE on
+         * this column rather than selecting the profile number outright. The
+         * buyer's profile number is 9000000199; what they typed is 9000000111.
+         * Getting the former here would mean the view had handed a builder a
+         * phone number nobody paid for.
+         */
+        check('a project lead shows the number the buyer typed, not their profile number',
+          inbox.data?.[0]?.buyer_mobile === '9000000111', String(inbox.data?.[0]?.buyer_mobile));
+        check('the inbox names the project and the unit enquired about',
+          String(inbox.data?.[0]?.project_name).includes('Green Valley') &&
+            inbox.data?.[0]?.unit_number === 'P-1',
+          JSON.stringify(inbox.data?.[0]));
+
+        const leadId = inbox.data?.[0]?.id;
+
+        // A builder who could edit the number they were given could then
+        // dispute what was sent.
+        const tamper = await builder
+          .from('leads').update({ contact_mobile: '9999999999' }).eq('id', leadId).select('contact_mobile');
+        check('a company cannot edit the contact details it was given', tamper.error !== null,
+          tamper.error ? tamper.error.code : 'UPDATE WAS ALLOWED');
+
+        const worked = await builder
+          .from('leads')
+          .update({ status: 'contacted', notes: 'Called; wants a site visit' })
+          .eq('id', leadId)
+          .select('status')
+          .maybeSingle();
+        check('a company can work the lead it received', worked.data?.status === 'contacted',
+          worked.error?.message ?? String(worked.data?.status));
+
+        const misassigned = await builder
+          .from('leads').update({ assigned_to: testUserId }).eq('id', leadId).select('assigned_to');
+        check('a lead cannot be assigned to somebody outside the company', misassigned.error !== null,
+          misassigned.error ? misassigned.error.code : 'UPDATE WAS ALLOWED');
+
+        const forgedLead = await user
+          .from('leads')
+          .insert({
+            project_id: project.data?.id,
+            organization_id: org.data?.id,
+            buyer_id: testUserId,
+            source: 'project_enquiry',
+            contact_name: 'Forged',
+            contact_mobile: '9000000111',
+          })
+          .select('id');
+        check('a client cannot file a project lead directly', forgedLead.error !== null,
+          forgedLead.error ? forgedLead.error.code : 'INSERT WAS ALLOWED');
+
+        // Through the service role deliberately: it bypasses RLS, so a failure
+        // here is the CHECK constraint refusing and nothing else.
+        const mislabelled = await admin
+          .from('leads')
+          .insert({
+            project_id: project.data?.id,
+            organization_id: org.data?.id,
+            buyer_id: testUserId,
+            source: 'contact_unlock',
+            contact_name: 'Mislabelled',
+            contact_mobile: '9000000111',
+          })
+          .select('id');
+        check('a project lead cannot be labelled as a paid unlock', mislabelled.error !== null,
+          mislabelled.error ? mislabelled.error.code : 'INSERT WAS ALLOWED');
+
+        // --- What the enquiry RPC refuses -----------------------------------
+        const ownProject = await builder.rpc('submit_project_enquiry', {
+          p_project_id: project.data?.id,
+          p_contact_name: 'Verification Builder',
+          p_contact_mobile: '9000000196',
+        });
+        check('a company cannot put an enquiry in its own inbox',
+          ownProject.data?.code === 'own_project', JSON.stringify(ownProject.data));
+
+        const unavailable = await user.rpc('submit_project_enquiry', {
+          p_project_id: other.data?.id,
+          p_contact_name: 'Verification Buyer',
+          p_contact_mobile: '9000000111',
+        });
+        check('an unpublished project cannot be enquired about',
+          unavailable.data?.code === 'project_unavailable', JSON.stringify(unavailable.data));
+
+        const wrongUnit = await user.rpc('submit_project_enquiry', {
+          p_project_id: project.data?.id,
+          p_unit_id: otherUnit.data?.id,
+          p_contact_name: 'Verification Buyer',
+          p_contact_mobile: '9000000111',
+        });
+        check('an enquiry cannot name a unit from another project',
+          wrongUnit.data?.code === 'unit_not_in_project', JSON.stringify(wrongUnit.data));
+
+        const badMobile = await user.rpc('submit_project_enquiry', {
+          p_project_id: project.data?.id,
+          p_contact_name: 'Verification Buyer',
+          p_contact_mobile: '12345',
+        });
+        check('an enquiry with an unusable number is refused',
+          badMobile.data?.code === 'mobile_invalid', JSON.stringify(badMobile.data));
+
+        const anonEnquiry = await anonProjects.rpc('submit_project_enquiry', {
+          p_project_id: project.data?.id,
+          p_contact_name: 'Drive By',
+          p_contact_mobile: '9000000111',
+        });
+        check('an anonymous enquiry is refused', anonEnquiry.data?.code === 'sign_in_required',
+          anonEnquiry.data?.code ?? anonEnquiry.error?.code);
+
+        // --- §4: the public builder profile ---------------------------------
+        const publicBuilder = await anonProjects
+          .from('builder_public_profiles').select('*').eq('id', org.data?.id).maybeSingle();
+        const builderCols = Object.keys(publicBuilder.data ?? {});
+        check('the public builder profile exposes no contact or tax column',
+          builderCols.length > 0 && !builderCols.some((c) => /phone|email|gst|admin_notes/i.test(c)),
+          builderCols.join(','));
+
+        /**
+         * Supabase grants ALL on a new public object and a single-table view is
+         * auto-updatable, so without the revoke this view is an anonymous write
+         * path into `organizations` that runs as the view owner and bypasses
+         * RLS entirely.
+         */
+        const anonWrite = await anonProjects
+          .from('builder_public_profiles').update({ name: 'Owned' }).eq('id', org.data?.id).select('id');
+        check('the public builder view is not an anonymous write path', anonWrite.error !== null,
+          anonWrite.error ? anonWrite.error.code : 'UPDATE WAS ALLOWED');
+
+        const viewsBefore = await admin
+          .from('projects').select('views_count').eq('id', project.data?.id).maybeSingle();
+        await anonProjects.rpc('record_project_view', { p_project_id: project.data?.id });
+        const viewsAfter = await admin
+          .from('projects').select('views_count').eq('id', project.data?.id).maybeSingle();
+        check('an anonymous visitor can be counted as a project view',
+          viewsAfter.data?.views_count === viewsBefore.data?.views_count + 1,
+          `${viewsBefore.data?.views_count} -> ${viewsAfter.data?.views_count}`);
+
+        // --- §22, §34: what only an admin can do ----------------------------
+        const progress = await admin.rpc('admin_verify_project_progress', {
+          p_project_id: project.data?.id,
+        });
+        check('only the admin RPC can mark construction progress verified',
+          progress.data?.progress_verification === 'admin_verified',
+          progress.error?.message ?? JSON.stringify(progress.data));
+
+        const suspended = await admin.rpc('admin_verify_organization', {
+          p_organization_id: org.data?.id,
+          p_status: 'suspended',
+          p_notes: 'Suspended by the verification suite',
+        });
+        check('the service role can suspend a company', suspended.data?.ok === true,
+          suspended.error?.message ?? JSON.stringify(suspended.data));
+
+        const offMarket = await anonProjects.from('projects').select('id').eq('id', project.data?.id);
+        check('suspending a company takes its projects off the market',
+          (offMarket.data ?? []).length === 0, `rows=${offMarket.data?.length ?? 0}`);
+
+        const goneFromList = await anonProjects
+          .from('builder_public_profiles').select('id').eq('id', org.data?.id);
+        check('a suspended company disappears from the public builder list',
+          (goneFromList.data ?? []).length === 0, `rows=${goneFromList.data?.length ?? 0}`);
+
+        await admin.rpc('admin_verify_organization', {
+          p_organization_id: org.data?.id,
+          p_status: 'verified',
+        });
+        const badge = await admin
+          .from('organizations')
+          .select('verification_status, is_verified, verified_at')
+          .eq('id', org.data?.id)
+          .maybeSingle();
+        check('the admin RPC is the only thing that awards the verified badge',
+          badge.data?.is_verified === true && Boolean(badge.data?.verified_at),
+          JSON.stringify(badge.data));
+
+        await builder.auth.signOut();
+      }
+    }
+
     // --- Anonymous access ---------------------------------------------------
     const anon = createClient(url, anonKey, { auth: { persistSession: false } });
     const anonProps = await anon.from('properties').select('id').eq('status', 'published').limit(5);
@@ -936,8 +1536,21 @@ async function main() {
     // a live project.
     if (seededSellerId) await admin.auth.admin.deleteUser(seededSellerId);
 
+    /**
+     * Before the builder account, and explicitly — `organizations.created_by`
+     * is ON DELETE SET NULL, so deleting the account on its own would leave a
+     * company and two published projects behind on a live database. Deleting
+     * the organization cascades the projects, their inventory and the leads
+     * raised against them.
+     */
+    for (const orgId of createdOrgIds) {
+      await admin.from('organizations').delete().eq('id', orgId);
+    }
+    if (builderUserId) await admin.auth.admin.deleteUser(builderUserId);
+
     console.log(
-      `\n  (cleaned up the throwaway verification account${seededSellerId ? ' and its fixture listings' : ''})`,
+      `\n  (cleaned up the throwaway verification account${seededSellerId ? ' and its fixture listings' : ''}` +
+        `${createdOrgIds.length ? ', and the fixture company with its projects' : ''})`,
     );
   }
 
