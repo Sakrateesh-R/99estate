@@ -861,6 +861,80 @@ async function main() {
       await admin.from('properties').delete().eq('id', draft.data?.id);
     }
 
+    // --- §18: renewing a listing actually renews it -------------------------
+    //
+    // This was never covered, which is how `renew_property` shipped throwing
+    // 42804 on every call: its UPDATE set an enum column from a CASE whose
+    // branches were both bare literals, so PostgreSQL resolved the expression
+    // as text and refused the assignment. Both the seller button and the admin
+    // one call this RPC, so neither worked.
+    //
+    // Requires migration 20261016090000_enum_case_needs_a_cast.sql. Both
+    // branches of that CASE are exercised, because a cast applied to one and
+    // not the other would look fixed from the dashboard.
+    {
+      const past = new Date(Date.now() - 100 * 24 * 3600 * 1000).toISOString();
+
+      const base = {
+        seller_id: testUserId,
+        property_type: 'apartment',
+        listing_type: 'sale',
+        city: 'Karur',
+        status: 'draft',
+      };
+
+      // Branch one: previously published, so renewing returns it to market.
+      const lived = await user
+        .from('properties')
+        .insert({ ...base, title: 'Renewal fixture, once live', price: 2100000 })
+        .select('id')
+        .maybeSingle();
+      await user.from('properties').update({ status: 'published' }).eq('id', lived.data?.id);
+      await admin
+        .from('properties').update({ status: 'expired', expires_at: past }).eq('id', lived.data?.id);
+
+      const renewed = await user.rpc('renew_property', { p_property_id: lived.data?.id });
+      check('a seller can renew a listing that was live',
+        renewed.data?.ok === true && renewed.data?.code === 'renewed',
+        renewed.error ? `${renewed.error.code} ${renewed.error.message}` : JSON.stringify(renewed.data));
+      check('renewing a previously published listing puts it back on the market',
+        renewed.data?.status === 'published',
+        renewed.error?.code ?? String(renewed.data?.status));
+
+      const clock = await admin
+        .from('properties')
+        .select('expires_at, last_renewed_at')
+        .eq('id', lived.data?.id)
+        .maybeSingle();
+      check('renewing restarts the 90-day clock',
+        Boolean(clock.data?.last_renewed_at) &&
+          new Date(clock.data?.expires_at).getTime() > Date.now(),
+        JSON.stringify(clock.data));
+
+      // Branch two: never published, so it has to pass moderation instead.
+      const unseen = await user
+        .from('properties')
+        .insert({ ...base, title: 'Renewal fixture, never live', price: 2200000 })
+        .select('id')
+        .maybeSingle();
+      await admin
+        .from('properties')
+        .update({ status: 'expired', expires_at: past, published_at: null })
+        .eq('id', unseen.data?.id);
+
+      const requeued = await user.rpc('renew_property', { p_property_id: unseen.data?.id });
+      check('renewing a listing that was never live sends it to moderation',
+        requeued.data?.ok === true && requeued.data?.status === 'pending',
+        requeued.error ? `${requeued.error.code} ${requeued.error.message}` : JSON.stringify(requeued.data));
+
+      const notMine = await user.rpc('renew_property', { p_property_id: properties[0].id });
+      check('a seller cannot renew a listing that is not theirs',
+        notMine.error?.code === '42501',
+        notMine.error ? notMine.error.code : JSON.stringify(notMine.data));
+
+      await admin.from('properties').delete().in('id', [lived.data?.id, unseen.data?.id]);
+    }
+
     // --- §12: the video link cannot be an arbitrary URL ---------------------
     //
     // Requires migration 20260926100000_property_video_tour.sql. The app
@@ -1433,13 +1507,34 @@ async function main() {
         check('an enquiry with an unusable number is refused',
           badMobile.data?.code === 'mobile_invalid', JSON.stringify(badMobile.data));
 
+        /**
+         * Refused at the grant, not inside the function. Migration 030 revokes
+         * this RPC from `public, anon`, so an anonymous caller never reaches
+         * the `sign_in_required` branch and gets 42501 instead.
+         *
+         * Naming `anon` in that revoke is load-bearing: a Supabase project's
+         * default privileges grant EXECUTE on new functions directly to `anon`,
+         * so revoking from PUBLIC alone would have left this open. That is why
+         * request_contact_unlock, which only revokes from PUBLIC, really is
+         * callable anonymously and answers with a tidy `unauthenticated` code.
+         *
+         * Either shape is a refusal, and both are accepted here — what must not
+         * happen is an anonymous enquiry landing a lead.
+         */
         const anonEnquiry = await anonProjects.rpc('submit_project_enquiry', {
           p_project_id: project.data?.id,
           p_contact_name: 'Drive By',
           p_contact_mobile: '9000000111',
         });
-        check('an anonymous enquiry is refused', anonEnquiry.data?.code === 'sign_in_required',
-          anonEnquiry.data?.code ?? anonEnquiry.error?.code);
+        check('an anonymous enquiry is refused',
+          anonEnquiry.error?.code === '42501' || anonEnquiry.data?.code === 'sign_in_required',
+          anonEnquiry.error?.code ?? JSON.stringify(anonEnquiry.data));
+
+        const { count: afterAnon } = await admin
+          .from('leads')
+          .select('id', { count: 'exact', head: true })
+          .eq('project_id', project.data?.id);
+        check('the refused anonymous enquiry filed nothing', afterAnon === 1, `leads=${afterAnon}`);
 
         // --- §4: the public builder profile ---------------------------------
         const publicBuilder = await anonProjects
