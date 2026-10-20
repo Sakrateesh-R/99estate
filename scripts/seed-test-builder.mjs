@@ -36,14 +36,43 @@ const REMOVE = process.argv.includes('--remove');
  * pins that constrain a real builder — testing as one would show you a flow
  * nobody else gets. The admin is included as a viewer so the account can still
  * see the company, and the platform-admin powers are reached from /admin.
+ *
+ * Only accounts belonging to whoever runs this project. The first version of
+ * this list seated two accounts that turned out to be real users of the live
+ * site, which put a fake company in a stranger's dashboard. `assertSeatable`
+ * below refuses that now, rather than trusting this list to stay right.
  */
 const SEATS = [
-  { email: 'nbalaji4325@gmail.com', role: 'owner' },
-  { email: 'sakrateesh007@gmail.com', role: 'admin' },
+  { email: 'sakrateesh007@gmail.com', role: 'owner' },
   { email: 'swathithangavelutester@gmail.com', role: 'sales_manager' },
-  { email: 'aadhirelators@gmail.com', role: 'marketing' },
   { email: 'sakrateesh777@gmail.com', role: 'viewer' },
 ];
+
+/**
+ * Refuses to seat an account that looks like a real user of the live site.
+ *
+ * This exists because the list above was wrong once and nothing caught it. A
+ * comment asking the next person to be careful is not a safeguard; a query is.
+ *
+ * The test is ownership of real inventory: a listing, or being the seller side
+ * of a lead. Buyer-side unlocks are deliberately not disqualifying — those are
+ * what you get from exercising the paywall with your own account, which most of
+ * these seats have done.
+ */
+async function assertSeatable(profile) {
+  const [{ count: listings }, { count: sellerLeads }] = await Promise.all([
+    db.from('properties').select('id', { count: 'exact', head: true }).eq('seller_id', profile.id),
+    db.from('leads').select('id', { count: 'exact', head: true }).eq('seller_id', profile.id),
+  ]);
+
+  if (listings > 0 || sellerLeads > 0) {
+    throw new Error(
+      `${profile.email} has ${listings} listing(s) and ${sellerLeads} seller-side lead(s), so it ` +
+        `looks like a real user of the live site. Refusing to seat it in a test company. Remove ` +
+        `it from SEATS, or use an account you own.`,
+    );
+  }
+}
 
 async function remove() {
   const { data } = await db.from('organizations').select('id, name').eq('slug', SLUG).maybeSingle();
@@ -73,6 +102,10 @@ async function seed() {
   const byEmail = new Map((profiles ?? []).map((p) => [p.email, p]));
   const owner = byEmail.get(SEATS[0].email);
   if (!owner) throw new Error(`the intended owner ${SEATS[0].email} has no profile on this project`);
+
+  // Before writing anything: every seat has to clear the real-user check, and a
+  // single failure aborts the whole seed rather than seating the others.
+  for (const profile of byEmail.values()) await assertSeatable(profile);
 
   const org = await db
     .from('organizations')

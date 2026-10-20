@@ -1108,6 +1108,44 @@ async function main() {
         check('a company cannot be left without an active owner', abandon.error !== null,
           abandon.error ? abandon.error.code : 'DELETE WAS ALLOWED');
 
+        /**
+         * The service role must be able to remove a membership.
+         *
+         * `organization_members_guard_write` is the only guard that fires on
+         * DELETE, and its trusted-writer early return was `return new` — which
+         * is NULL on a DELETE, and a BEFORE DELETE trigger returning NULL
+         * cancels the row *silently*. So this is asserted by counting rows
+         * rather than by checking for an error: the broken version reported
+         * success and left the row in place.
+         *
+         * It also broke ON DELETE CASCADE, leaving memberships behind whose
+         * organization was gone — which is how every fixture cleanup in this
+         * suite was quietly corrupting the table while appearing to work. The
+         * orphan check at the end of the run is the other half of this.
+         */
+        const extraSeat = await admin
+          .from('organization_members')
+          .insert({
+            organization_id: org.data?.id,
+            user_id: testUserId,
+            role: 'viewer',
+            status: 'active',
+          })
+          .select('id')
+          .maybeSingle();
+
+        if (extraSeat.data?.id) {
+          await admin.from('organization_members').delete().eq('id', extraSeat.data.id);
+          const { count: left } = await admin
+            .from('organization_members')
+            .select('id', { count: 'exact', head: true })
+            .eq('id', extraSeat.data.id);
+          check('the service role can actually remove a membership', left === 0,
+            `${left} row(s) survived a delete that reported success`);
+        } else {
+          check('the service role can seat a member', false, extraSeat.error?.message);
+        }
+
         const selfVerify = await builder
           .from('organizations')
           .update({ verification_status: 'verified' })
@@ -1647,6 +1685,29 @@ async function main() {
       `\n  (cleaned up the throwaway verification account${seededSellerId ? ' and its fixture listings' : ''}` +
         `${createdOrgIds.length ? ', and the fixture company with its projects' : ''})`,
     );
+
+    /**
+     * Proves the cleanup above actually cleaned up.
+     *
+     * Deleting a company is supposed to cascade its memberships away. While
+     * `organization_members_guard_write` cancelled those child deletes, the
+     * parent delete still succeeded and every run of this suite left orphans
+     * behind — invisibly, because the organization really was gone and nothing
+     * ever looked at the children. Counting them is the only way that shows up.
+     */
+    const { count: orphans } = await admin
+      .from('organization_members')
+      .select('id, organizations!inner(id)', { count: 'exact', head: true });
+    const { count: allMemberships } = await admin
+      .from('organization_members')
+      .select('id', { count: 'exact', head: true });
+
+    if (orphans !== null && allMemberships !== null && allMemberships > orphans) {
+      console.log(
+        `\n  WARNING: ${allMemberships - orphans} membership row(s) point at an organization ` +
+          `that no longer exists. Apply scripts/pending-migration-032.sql.`,
+      );
+    }
   }
 
   console.log(`\n${passed} passed, ${failures.length} failed\n`);
