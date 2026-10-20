@@ -22,6 +22,15 @@ const COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
     ],
   },
   {
+    title: 'New projects',
+    links: [
+      { href: '/projects', label: 'All projects' },
+      { href: '/projects?type=apartment', label: 'New apartments' },
+      { href: '/projects?type=villa', label: 'Villa projects' },
+      { href: '/projects?type=plot', label: 'Plot layouts' },
+    ],
+  },
+  {
     title: 'Sell',
     links: [
       { href: '/dashboard/properties/new', label: 'Post a property free' },
@@ -61,7 +70,10 @@ export function SiteFooter() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
+          {/* The track count has to match COLUMNS.length, which is now five —
+              Tailwind needs it as a literal class, so adding a column here
+              means changing this line too. */}
+          <div className="grid grid-cols-2 gap-8 sm:grid-cols-3 lg:grid-cols-5">
             {COLUMNS.map((column) => (
               <div key={column.title}>
                 <h3 className="text-[0.8125rem] font-semibold uppercase tracking-wider text-ink-950">

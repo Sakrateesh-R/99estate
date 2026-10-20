@@ -416,6 +416,30 @@ async function checkProjectPages() {
       return { status: res.status, html: await res.text() };
     };
 
+    // ---- Discoverability --------------------------------------------------
+    //
+    // Three pages shipped that nothing linked to, which is worth an assertion
+    // of its own: a route that only a sitemap knows about earns nothing, and
+    // the failure mode is silent — every page still renders, nobody arrives.
+    /**
+     * Asserted against rendered markup, never against a bare string.
+     *
+     * In development React serialises Server Component props into the RSC
+     * payload, so `html.includes('New projects from builders')` is true even
+     * when the rail received an empty list and rendered nothing at all — the
+     * title is sitting in `"props":{...}`. Both directions of this check were
+     * originally written that way and the negative one failed while the code
+     * was correct; the positive one would have passed with no rail on the page.
+     *
+     * The card link is the reliable signal: `href="/projects/<slug>"` only
+     * exists once a card has actually been rendered.
+     */
+    const RAIL_HEADING = />New projects from builders<\/h2>/;
+    const home = await get('/');
+    check('the header offers New projects', /href="\/projects"/.test(home.html));
+    check('the home page rails a published project',
+      RAIL_HEADING.test(home.html) && home.html.includes(`href="/projects/${slug}"`));
+
     // ---- The index -------------------------------------------------------
     const index = await get('/projects');
     check('the project index renders', index.status === 200, `status ${index.status}`);
@@ -534,6 +558,17 @@ async function checkProjectPages() {
     const suspended = await get(`/projects/${slug}`);
     check('suspending the company takes its project page down',
       suspended.html.includes('Project not found'), `status ${suspended.status}`);
+
+    /**
+     * And the rail disappears with it. Suspension unpublishes the projects, so
+     * this is also the only cheap way to see the empty branch: the rail renders
+     * nothing at all rather than a heading over "no projects yet", which would
+     * spend the best space on the page describing inventory we do not have.
+     */
+    const homeAfter = await get('/');
+    check('the home rail disappears when nothing is published',
+      !RAIL_HEADING.test(homeAfter.html) && !homeAfter.html.includes(`href="/projects/${slug}"`));
+    check('but the header link stays', /href="\/projects"/.test(homeAfter.html));
   } finally {
     if (orgId) {
       const { error } = await db.from('organizations').delete().eq('id', orgId);

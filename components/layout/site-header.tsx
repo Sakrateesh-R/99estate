@@ -17,6 +17,15 @@ const PRIMARY_LINKS: NavLink[] = [
   { href: '/properties?listing=sale', label: 'Buy' },
   { href: '/properties?listing=rent', label: 'Rent' },
   { href: '/properties?listing=pg', label: 'PG & Co-living' },
+  /**
+   * Its own entry rather than a filter on `/properties`, because a project is
+   * not a listing: it has configurations, a construction stage and inventory
+   * per unit, and the two sets never mix in one result grid. Placed before
+   * "All properties" so it reads as a sibling of Buy and Rent — a buyer looking
+   * for a new build is choosing a different kind of purchase, not narrowing a
+   * search.
+   */
+  { href: '/projects', label: 'New projects' },
   { href: '/properties', label: 'All properties' },
 ];
 

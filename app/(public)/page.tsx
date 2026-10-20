@@ -21,6 +21,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { HeroSearch } from '@/components/property/hero-search';
 import { PropertyRail } from '@/components/property/property-rail';
+import { ProjectRail } from '@/components/project/project-rail';
+import { getPublicProjects } from '@/lib/projects/public';
 import { ButtonLink } from '@/components/ui/button';
 import {
   getActiveCities,
@@ -70,13 +72,14 @@ export const metadata: Metadata = {
  */
 export default async function HomePage() {
   // Independent reads — fire them together rather than waterfalling.
-  const [featured, latest, locations, categories, cities, places] = await Promise.all([
+  const [featured, latest, locations, categories, cities, places, projects] = await Promise.all([
     getFeaturedProperties(8),
     getLatestProperties(8),
     getPopularLocations(12),
     getBrowseCategories(),
     getActiveCities(),
     getSearchPlaces(),
+    getPublicProjects({}, 8),
   ]);
 
   // One batched lookup covering both rails rather than one per card.
@@ -128,6 +131,20 @@ export default async function HomePage() {
         photoCounts={photoCounts}
         savedIds={savedIds}
         unlocked={unlocked}
+      />
+
+      {/*
+        Below the listing rails, not above them.
+
+        A project is a different kind of purchase from a resale flat and most
+        visitors are not shopping for one, so it does not earn the position the
+        page's main inventory holds. It renders nothing at all when no builder
+        has published yet, which is the state today — see ProjectRail.
+      */}
+      <ProjectRail
+        title="New projects from builders"
+        description="Apartments, villas and plot layouts — with prices and availability per unit."
+        projects={projects}
       />
 
       {locations.length > 0 ? <PopularLocations locations={locations} /> : null}
