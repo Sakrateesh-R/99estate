@@ -2,12 +2,13 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { getProfile } from '@/lib/auth/session';
 import { getMyMembership, getMyOrganizations } from '@/lib/organizations/queries';
 import { organizationSchema, type OrganizationFieldName } from '@/lib/organizations/schema';
 import { MAX_ORGANIZATIONS_PER_USER } from '@/lib/constants';
+import type { Enums } from '@/types/database.types';
 
 export type OrganizationFormState = {
   ok: boolean;
@@ -168,16 +169,232 @@ export async function updateOrganization(
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// The team (§3)
+// ---------------------------------------------------------------------------
+
+export type TeamActionState = { ok: boolean; error?: string; message?: string };
+
+/** Roles an invitation may carry. `owner` is absent on purpose — see below. */
+const INVITABLE_ROLES = ['admin', 'sales_manager', 'sales_executive', 'marketing', 'viewer'] as const;
+
+const inviteSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email('Enter a valid email address')
+    .max(200, 'That address is too long'),
+  /**
+   * Not `owner`. `organization_invitations_role_check` refuses it in the
+   * database too: ownership of a company is transferred deliberately by an
+   * existing owner, not handed out in a form where one mistyped address would
+   * give the business away.
+   */
+  role: z.enum(INVITABLE_ROLES, {
+    errorMap: () => ({ message: 'Choose what this person should be able to do' }),
+  }),
+});
+
 /**
- * Changing a colleague's role is deliberately not here yet.
+ * Invites a colleague by email address.
  *
- * It was written, and then removed: there is no way to *add* a colleague until
- * an invitation flow exists, so a role-change action could only ever act on a
- * team of one — and the database refuses a self-change anyway
- * (`organization_members_guard_write`), so every call would have been rejected.
- *
- * `scripts/verify-builder-forms.mts` is what caught it. The action read
- * `member_id` and `role` out of a FormData that no form on the site submits,
- * which is the signature of an exported Server Action nothing can reach. It
- * comes back with the invitation flow, along with the UI that calls it.
+ * It does not send anything, because there is no mailer in this project. The
+ * row sits and waits, and `accept_pending_invitations()` turns it into a
+ * membership the moment that person signs in with Google on that address — the
+ * auth callback calls it. So the sender's next step is to tell them to sign in,
+ * which the UI says plainly rather than implying.
  */
+export async function inviteMember(
+  _prevState: TeamActionState,
+  formData: FormData,
+): Promise<TeamActionState> {
+  const organizationId = String(formData.get('organization_id') ?? '');
+  if (!organizationId) return { ok: false, error: 'Something went wrong. Please reload the page.' };
+
+  const membership = await getMyMembership(organizationId);
+  if (!membership?.canManage) {
+    return { ok: false, error: 'Only an owner or admin can invite a colleague.' };
+  }
+
+  const parsed = inviteSchema.safeParse({
+    email: formData.get('email') ?? '',
+    role: formData.get('role') ?? '',
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Check the details and try again.' };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from('organization_invitations').insert({
+    organization_id: organizationId,
+    email: parsed.data.email,
+    role: parsed.data.role,
+  });
+
+  if (error) {
+    // 23505 covers both the one-pending-per-address index and the guard's
+    // "already on the team", which are the same thing from the sender's side.
+    if (error.code === '23505') {
+      return {
+        ok: false,
+        error: error.message.includes('already on the team')
+          ? 'That person is already on your team.'
+          : 'You have already invited that address.',
+      };
+    }
+    if (error.code === '23514') {
+      return { ok: false, error: 'You have too many invitations outstanding. Withdraw one first.' };
+    }
+    if (error.code === '42501') {
+      return { ok: false, error: 'Only an owner or admin can invite a colleague.' };
+    }
+    return { ok: false, error: 'We could not record that invitation. Please try again.' };
+  }
+
+  revalidatePath('/dashboard/organization');
+  return {
+    ok: true,
+    message: `${parsed.data.email} can join by signing in with Google on that address.`,
+  };
+}
+
+/** Withdraws an invitation that has not been taken up. */
+export async function revokeInvitation(formData: FormData): Promise<TeamActionState> {
+  const organizationId = String(formData.get('organization_id') ?? '');
+  const invitationId = String(formData.get('invitation_id') ?? '');
+  if (!organizationId || !invitationId) {
+    return { ok: false, error: 'Something went wrong. Please reload the page.' };
+  }
+
+  const membership = await getMyMembership(organizationId);
+  if (!membership?.canManage) {
+    return { ok: false, error: 'Only an owner or admin can withdraw an invitation.' };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('organization_invitations')
+    .update({ status: 'revoked' })
+    .eq('id', invitationId)
+    .eq('organization_id', organizationId);
+
+  if (error) return { ok: false, error: 'We could not withdraw that invitation. Please try again.' };
+
+  revalidatePath('/dashboard/organization');
+  return { ok: true, message: 'Invitation withdrawn.' };
+}
+
+/**
+ * Changes a colleague's role.
+ *
+ * Never your own: `organization_members_guard_write` raises on a self-change,
+ * which is what stops somebody promoting themselves to owner. A separate
+ * constraint trigger refuses to leave the company without an active owner, so
+ * demoting the last one fails at the database even if this check is bypassed.
+ */
+export async function updateMemberRole(formData: FormData): Promise<TeamActionState> {
+  const organizationId = String(formData.get('organization_id') ?? '');
+  const memberId = String(formData.get('member_id') ?? '');
+  const role = String(formData.get('role') ?? '');
+
+  if (!organizationId || !memberId || !role) {
+    return { ok: false, error: 'Something went wrong. Please reload the page.' };
+  }
+
+  const membership = await getMyMembership(organizationId);
+  if (!membership?.canManage) return { ok: false, error: 'Only an owner or admin can change roles.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('organization_members')
+    .update({ role: role as Enums<'org_member_role'> })
+    .eq('id', memberId)
+    .eq('organization_id', organizationId);
+
+  if (error) {
+    if (error.code === '42501') {
+      return {
+        ok: false,
+        error: error.message.includes('your own')
+          ? 'You cannot change your own role. Ask another owner to do it.'
+          : 'Only an owner or admin can change roles.',
+      };
+    }
+    if (error.code === '23514') {
+      return { ok: false, error: 'A company has to keep at least one active owner.' };
+    }
+    return { ok: false, error: 'We could not change that role. Please try again.' };
+  }
+
+  revalidatePath('/dashboard/organization');
+  return { ok: true, message: 'Role updated.' };
+}
+
+/**
+ * Removes a colleague, or yourself.
+ *
+ * The row count is checked rather than only the error, because this is exactly
+ * where migration 032 bites: `organization_members_guard_write` returned NEW on
+ * its trusted-writer path, which is NULL during a DELETE and cancels the row
+ * *silently*. An owner acting on their own company reaches a correct
+ * `return old` and is unaffected; a platform admin is not. Reporting success
+ * for a delete that changed nothing is the one outcome worth refusing.
+ */
+export async function removeMember(formData: FormData): Promise<TeamActionState> {
+  const organizationId = String(formData.get('organization_id') ?? '');
+  const memberId = String(formData.get('member_id') ?? '');
+  if (!organizationId || !memberId) {
+    return { ok: false, error: 'Something went wrong. Please reload the page.' };
+  }
+
+  const membership = await getMyMembership(organizationId);
+  if (!membership) return { ok: false, error: 'You do not have access to that company.' };
+
+  const supabase = await createClient();
+  const { data: target } = await supabase
+    .from('organization_members')
+    .select('id, user_id')
+    .eq('id', memberId)
+    .eq('organization_id', organizationId)
+    .maybeSingle();
+
+  if (!target) return { ok: false, error: 'That person is not on this team.' };
+
+  const profile = await getProfile();
+  const isSelf = target.user_id === profile?.id;
+  if (!isSelf && !membership.canManage) {
+    return { ok: false, error: 'Only an owner or admin can remove a team member.' };
+  }
+
+  const { error } = await supabase
+    .from('organization_members')
+    .delete()
+    .eq('id', memberId)
+    .eq('organization_id', organizationId);
+
+  if (error) {
+    if (error.code === '42501') {
+      return { ok: false, error: 'Only an owner or admin can remove a team member.' };
+    }
+    if (error.code === '23514') {
+      return { ok: false, error: 'A company has to keep at least one active owner.' };
+    }
+    return { ok: false, error: 'We could not remove that person. Please try again.' };
+  }
+
+  const { count } = await supabase
+    .from('organization_members')
+    .select('id', { count: 'exact', head: true })
+    .eq('id', memberId);
+
+  if (count !== 0) {
+    return {
+      ok: false,
+      error: 'That did not take effect — the database still needs migration 032 applied.',
+    };
+  }
+
+  revalidatePath('/dashboard', 'layout');
+  return { ok: true, message: isSelf ? 'You have left the company.' : 'Team member removed.' };
+}

@@ -228,10 +228,20 @@ accepts('a Maps share link is accepted', projectSchema, {
  * actions read separately, and `org_types` / `bedroom_options` are read with
  * `getAll`.
  */
-function formFieldNames(path: string): Set<string> {
-  const source = readFileSync(path, 'utf8');
+function formFieldNames(...paths: string[]): Set<string> {
   const names = new Set<string>();
-  for (const match of source.matchAll(/\bname="([a-z_]+)"/g)) names.add(match[1]);
+  for (const path of paths) {
+    const source = readFileSync(path, 'utf8');
+    for (const match of source.matchAll(/\bname="([a-z_]+)"/g)) names.add(match[1]);
+    /**
+     * Not every field is an `<input name=…>`. The team panel builds a FormData
+     * by hand for its row actions — a role change is a `<select>` with an
+     * `onChange`, and removing somebody is a button, neither of which is a form
+     * field. Those keys are just as capable of drifting from what the action
+     * reads, so they are collected too.
+     */
+    for (const match of source.matchAll(/formData\.set\('([a-z_]+)'/g)) names.add(match[1]);
+  }
   return names;
 }
 
@@ -243,7 +253,15 @@ function actionFieldNames(path: string): Set<string> {
   return names;
 }
 
-const ORG_FORM = formFieldNames('components/dashboard/organization-form.tsx');
+/**
+ * Two components write to the organizations action: the company profile form,
+ * and the team panel. The cross-check only means something if it knows about
+ * both — pointed at one, it reported the other's fields as unread.
+ */
+const ORG_FORM = formFieldNames(
+  'components/dashboard/organization-form.tsx',
+  'components/dashboard/team-manager.tsx',
+);
 const ORG_ACTION = actionFieldNames('lib/organizations/actions.ts');
 const PROJECT_FORM = formFieldNames('components/dashboard/project-form.tsx');
 const PROJECT_ACTION = actionFieldNames('lib/projects/actions.ts');
@@ -289,6 +307,15 @@ for (const field of PROJECT_ACTION) {
  */
 for (const key of Object.keys(organizationSchema.shape)) {
   check(`the company schema key "${key}" has an input`, ORG_FORM.has(key));
+}
+
+/**
+ * The invite form is validated by its own schema inside the action rather than
+ * an exported one, so its two fields are named here instead of enumerated.
+ */
+for (const key of ['email', 'role']) {
+  check(`the invite form submits "${key}"`, ORG_FORM.has(key));
+  check(`the company action reads "${key}"`, ORG_ACTION.has(key));
 }
 for (const key of Object.keys(projectFields.shape)) {
   if (key === 'organization_id') continue; // hidden when there is only one company

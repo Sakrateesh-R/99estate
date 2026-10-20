@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Building2, ExternalLink, Plus, ShieldCheck, Users } from 'lucide-react';
+import { Building2, ExternalLink, Plus, Users } from 'lucide-react';
 import { Badge, EntityVerificationBadge } from '@/components/ui/badge';
+import { TeamManager } from '@/components/dashboard/team-manager';
 import { ButtonLink } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -11,14 +12,10 @@ import { updateOrganization } from '@/lib/organizations/actions';
 import {
   getMyOrganizations,
   getTeam,
+  getPendingInvitations,
   type OrganizationMembership,
 } from '@/lib/organizations/queries';
-import {
-  ORGANIZATION_TYPE_LABELS,
-  ORG_MEMBER_ROLE_LABELS,
-  ORG_MEMBER_ROLE_SUMMARY,
-  ORG_MEMBER_STATUS_LABELS,
-} from '@/lib/constants';
+import { ORGANIZATION_TYPE_LABELS, ORG_MEMBER_ROLE_LABELS } from '@/lib/constants';
 import { formatDate } from '@/lib/format';
 
 export const metadata: Metadata = {
@@ -95,7 +92,11 @@ export default async function OrganizationPage() {
  */
 async function OrganizationSection({ membership }: { membership: OrganizationMembership }) {
   const { organization, role, canManage } = membership;
-  const team = await getTeam(organization.id);
+  // Both feed the team panel and neither depends on the other.
+  const [team, invitations] = await Promise.all([
+    getTeam(organization.id),
+    getPendingInvitations(organization.id),
+  ]);
 
   return (
     <section className="space-y-6">
@@ -163,44 +164,13 @@ async function OrganizationSection({ membership }: { membership: OrganizationMem
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <ul className="divide-y divide-ink-100">
-                  {team.map((member) => (
-                    <li key={member.id} className="flex flex-wrap items-center gap-3 py-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-ink-900">
-                          {member.name ?? 'Unnamed member'}
-                          {member.isYou ? (
-                            <span className="ml-1.5 text-xs font-normal text-ink-500">(you)</span>
-                          ) : null}
-                        </p>
-                        <p className="truncate text-xs text-ink-500">
-                          {ORG_MEMBER_ROLE_SUMMARY[member.role]}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        {member.status !== 'active' ? (
-                          <Badge tone="warning">{ORG_MEMBER_STATUS_LABELS[member.status]}</Badge>
-                        ) : null}
-                        <Badge tone={member.role === 'owner' ? 'brand' : 'neutral'}>
-                          {ORG_MEMBER_ROLE_LABELS[member.role]}
-                        </Badge>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-
-                {/* Said plainly rather than shown as a disabled button. Inviting
-                    a colleague needs an invitation flow that does not exist
-                    yet, and a control that looks live but is not is worse than
-                    an honest sentence. */}
-                <p className="mt-4 flex items-start gap-2 rounded-field bg-ink-50 px-3.5 py-3 text-xs text-ink-600">
-                  <ShieldCheck className="mt-0.5 size-4 shrink-0 text-ink-400" aria-hidden />
-                  <span>
-                    Inviting colleagues is not available yet. Ask 99Estate to add someone to your
-                    team, and they will appear here with the role you choose.
-                  </span>
-                </p>
+                <TeamManager
+                  organizationId={organization.id}
+                  members={team}
+                  invitations={invitations}
+                  canManage={canManage}
+                  myRole={role}
+                />
               </CardContent>
             </Card>
 

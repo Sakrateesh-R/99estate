@@ -108,6 +108,75 @@ export async function getPrimaryOrganization(): Promise<OrganizationMembership |
   return all[0] ?? null;
 }
 
+export type PendingInvitation = {
+  id: string;
+  email: string;
+  role: Enums<'org_member_role'>;
+  invitedAt: string;
+  expiresAt: string;
+  /** True once the window has closed; the row stays until somebody tidies it. */
+  isExpired: boolean;
+};
+
+/** Outstanding invitations for a company, newest first. */
+export async function getPendingInvitations(organizationId: string): Promise<PendingInvitation[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('organization_invitations')
+    .select('id, email, role, created_at, expires_at')
+    .eq('organization_id', organizationId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+
+  const now = Date.now();
+  return data.map((row) => ({
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    invitedAt: row.created_at,
+    expiresAt: row.expires_at,
+    isExpired: new Date(row.expires_at).getTime() <= now,
+  }));
+}
+
+export type IncomingInvitation = {
+  id: string;
+  organizationName: string;
+  organizationSlug: string;
+  role: Enums<'org_member_role'>;
+};
+
+/**
+ * Invitations addressed to the signed-in user that have not been taken up.
+ *
+ * In practice this is almost always empty, because the auth callback accepts
+ * them at sign-in. It covers the case where somebody was invited *while*
+ * already signed in — their session predates the invitation, so nothing has
+ * run `accept_pending_invitations()` for it yet, and the dashboard can offer
+ * them the seat instead of saying nothing.
+ */
+export const getIncomingInvitations = cache(async (): Promise<IncomingInvitation[]> => {
+  const user = await getUser();
+  if (!user?.email) return [];
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('organization_invitations')
+    .select('id, role, organizations (name, slug)')
+    .eq('email', user.email.toLowerCase())
+    .eq('status', 'pending')
+    .gt('expires_at', new Date().toISOString());
+
+  if (error || !data) return [];
+
+  return data.flatMap((row) => {
+    const org = row.organizations as { name: string; slug: string } | null;
+    return org ? [{ id: row.id, organizationName: org.name, organizationSlug: org.slug, role: row.role }] : [];
+  });
+});
+
 export type TeamMember = {
   id: string;
   userId: string;

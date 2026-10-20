@@ -287,6 +287,52 @@ export type Database = {
       };
 
       /**
+       * A seat offered to an email address (§3).
+       *
+       * Keyed by email rather than by `user_id`, because a colleague who has
+       * never signed in has no `profiles` row to point at — and because there
+       * is no mailer in this project, so an invitation has to work by waiting
+       * for them at sign-in rather than by being sent to them.
+       * `accept_pending_invitations()` is what converts it.
+       */
+      organization_invitations: {
+        Row: {
+          id: string;
+          organization_id: string;
+          /** Always lower-cased; matched against the verified address on the JWT. */
+          email: string;
+          role: Database['public']['Enums']['org_member_role'];
+          status: Database['public']['Enums']['org_invitation_status'];
+          invited_by: string | null;
+          accepted_by: string | null;
+          created_at: string;
+          expires_at: string;
+          responded_at: string | null;
+        };
+        /** Owner or admin of the company. */
+        Insert: {
+          organization_id: string;
+          email: string;
+          /**
+           * Anything but `owner` — `organization_invitations_role_check`
+           * refuses that. Ownership is transferred deliberately by an existing
+           * owner, not handed out in a form where a mistyped address would give
+           * away the company.
+           */
+          role?: Database['public']['Enums']['org_member_role'];
+          /** Defaults to `invitation_validity_days` from app_settings. */
+          expires_at?: string;
+        };
+        /** Withdrawing an offer is the only change a person may make. */
+        Update: { status?: 'revoked' };
+        Relationships: [
+          { foreignKeyName: 'organization_invitations_organization_id_fkey'; columns: ['organization_id']; referencedRelation: 'organizations'; referencedColumns: ['id'] },
+          { foreignKeyName: 'organization_invitations_invited_by_fkey'; columns: ['invited_by']; referencedRelation: 'profiles'; referencedColumns: ['id'] },
+          { foreignKeyName: 'organization_invitations_accepted_by_fkey'; columns: ['accepted_by']; referencedRelation: 'profiles'; referencedColumns: ['id'] },
+        ];
+      };
+
+      /**
        * A builder / promoter / developer / agency. Public profile lives at
        * /builders/<slug>; the non-sensitive columns are also exposed as the
        * `builder_public_profiles` view for anonymous reads.
@@ -1193,6 +1239,11 @@ export type Database = {
       can_manage_org_inventory: { Args: { p_org_id: string; p_uid?: string }; Returns: boolean };
       /** The above plus marketing: the project record, its media and its amenities. */
       can_manage_org_marketing: { Args: { p_org_id: string; p_uid?: string }; Returns: boolean };
+      /**
+       * Turns every pending invitation addressed to the caller's verified email
+       * into an active membership. Idempotent, and called on every sign-in.
+       */
+      accept_pending_invitations: { Args: Record<string, never>; Returns: Json };
     };
 
     Enums: {
@@ -1278,6 +1329,7 @@ export type Database = {
         | 'real_estate_company';
       org_member_role: 'owner' | 'admin' | 'sales_manager' | 'sales_executive' | 'marketing' | 'viewer';
       org_member_status: 'invited' | 'active' | 'suspended';
+      org_invitation_status: 'pending' | 'accepted' | 'revoked';
       project_type: 'apartment' | 'villa' | 'independent_house' | 'plot' | 'commercial' | 'mixed_development';
       /** Where construction has got to. Independent of unit status and of is_published. */
       project_status:

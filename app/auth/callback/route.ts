@@ -50,6 +50,27 @@ export async function GET(request: NextRequest) {
 
   if (!user) return failTo('Your session could not be established.');
 
+  /**
+   * §3 — take up any seat waiting for this address.
+   *
+   * This is the whole mechanism behind invitations. There is no mailer in this
+   * project, so a colleague is not sent a link: an owner records their email,
+   * and the invitation becomes a membership the first time they sign in. Doing
+   * it here rather than on the dashboard means they are already a member by the
+   * time any page renders, so nothing has to handle the half-state.
+   *
+   * Deliberately not allowed to break sign-in. A failure here means somebody
+   * joins a moment later — the dashboard offers any still-pending invitation —
+   * whereas failing the callback would lock them out of their own account.
+   */
+  const { error: inviteError } = await supabase.rpc('accept_pending_invitations');
+  if (inviteError) {
+    console.error('[auth] accept_pending_invitations failed', {
+      code: inviteError.code,
+      message: inviteError.message,
+    });
+  }
+
   // The profile row is created by the `on_auth_user_created` trigger, so it
   // exists by now; what it may lack is a mobile number.
   const { data: profile } = await supabase
