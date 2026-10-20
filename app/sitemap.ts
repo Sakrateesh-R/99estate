@@ -9,6 +9,8 @@ import type { Enums } from '@/types/database.types';
 
 /** Sitemaps cap at 50,000 URLs; stay well inside it. */
 const MAX_PROPERTY_URLS = 20_000;
+const MAX_PROJECT_URLS = 5_000;
+const MAX_BUILDER_URLS = 2_000;
 
 const LISTING_TYPES: Enums<'listing_type'>[] = ['sale', 'rent', 'pg'];
 
@@ -31,6 +33,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = [
     { url: `${base}/`, changeFrequency: 'daily', priority: 1 },
     { url: `${base}/properties`, changeFrequency: 'hourly', priority: 0.9 },
+    { url: `${base}/projects`, changeFrequency: 'daily', priority: 0.8 },
     { url: `${base}/how-it-works`, changeFrequency: 'monthly', priority: 0.6 },
     { url: `${base}/pricing`, changeFrequency: 'monthly', priority: 0.6 },
     { url: `${base}/about`, changeFrequency: 'yearly', priority: 0.4 },
@@ -45,17 +48,40 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // The same index the landing routes resolve against, so the sitemap can
     // never advertise a URL that 404s — the two would otherwise drift apart
     // the moment a seller used a locality nobody had added to the catalog.
-    const [{ data: properties }, places, inventory] = await Promise.all([
-      supabase
-        .from('properties')
-        .select('id, slug, public_code, updated_at, published_at')
-        .eq('status', 'published')
-        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
-        .order('published_at', { ascending: false, nullsFirst: false })
-        .limit(MAX_PROPERTY_URLS),
-      landingPlaces(),
-      landingInventory(),
-    ]);
+    const [{ data: properties }, { data: projects }, { data: builders }, places, inventory] =
+      await Promise.all([
+        supabase
+          .from('properties')
+          .select('id, slug, public_code, updated_at, published_at')
+          .eq('status', 'published')
+          .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+          .order('published_at', { ascending: false, nullsFirst: false })
+          .limit(MAX_PROPERTY_URLS),
+        /**
+         * No expiry filter, deliberately. §18 keeps a completed, sold-out
+         * project public as the builder's track record, so unlike a listing
+         * there is no stale project to keep out of the index. RLS already
+         * restricts this to published, unsuspended ones.
+         */
+        supabase
+          .from('projects')
+          .select('slug, updated_at, organization_id')
+          .order('published_at', { ascending: false, nullsFirst: false })
+          .limit(MAX_PROJECT_URLS),
+        /**
+         * Every company, narrowed below to the ones with a published project.
+         *
+         * Not `.gt('projects_count', 0)`, which was the first attempt and was
+         * wrong: that counter includes drafts, so a builder whose every project
+         * is unpublished would have been advertised here while their own page
+         * emits `noindex` — the same contradiction the landing pages were fixed
+         * for. The published projects are already being fetched, so the set of
+         * companies worth listing is derivable from them and cannot disagree.
+         */
+        supabase.from('builder_public_profiles').select('id, slug').limit(MAX_BUILDER_URLS),
+        landingPlaces(),
+        landingInventory(),
+      ]);
 
     const cityRows = places.filter((p) => p.locality === null);
     const localityRows = places.filter((p) => p.locality !== null);
@@ -119,7 +145,32 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     }));
 
-    return [...staticEntries, ...cityEntries, ...localityEntries, ...propertyEntries];
+    const projectEntries: MetadataRoute.Sitemap = (projects ?? []).map((p) => ({
+      url: `${base}/projects/${p.slug}`,
+      lastModified: new Date(p.updated_at),
+      changeFrequency: 'weekly',
+      priority: 0.7,
+    }));
+
+    // The companies that actually have a page worth crawling.
+    const orgsWithLiveProjects = new Set((projects ?? []).map((p) => p.organization_id));
+
+    const builderEntries: MetadataRoute.Sitemap = (builders ?? [])
+      .filter((b) => b.slug && b.id && orgsWithLiveProjects.has(b.id))
+      .map((b) => ({
+        url: `${base}/builders/${b.slug}`,
+        changeFrequency: 'weekly',
+        priority: 0.5,
+      }));
+
+    return [
+      ...staticEntries,
+      ...cityEntries,
+      ...localityEntries,
+      ...propertyEntries,
+      ...projectEntries,
+      ...builderEntries,
+    ];
   } catch {
     // A database hiccup should degrade the sitemap, not break the route.
     return staticEntries;

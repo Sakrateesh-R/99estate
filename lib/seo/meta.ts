@@ -1,5 +1,11 @@
-import { formatArea, formatListingPrice } from '@/lib/format';
-import { FACING_LABELS, PROPERTY_TYPE_LABELS, SITE_NAME } from '@/lib/constants';
+import { formatArea, formatListingPrice, formatPriceShort } from '@/lib/format';
+import {
+  FACING_LABELS,
+  PROJECT_STATUS_LABELS,
+  PROJECT_TYPE_LABELS,
+  PROPERTY_TYPE_LABELS,
+  SITE_NAME,
+} from '@/lib/constants';
 import type { Enums } from '@/types/database.types';
 
 /**
@@ -57,6 +63,61 @@ export function listingMetaDescription(property: {
 
   const middle = details.length > 0 ? ` ${details.join(', ')}.` : '';
   const tail = ` View photos and full details free on ${SITE_NAME}.`;
+
+  return clampToWord(`${lead}${middle}${tail}`, 155);
+}
+
+/**
+ * §23 applied to a project page.
+ *
+ * Built from the project's own columns for the same reason the listing version
+ * is: `description` is free text a builder uses as a feature list, and sliced to
+ * 155 characters that reads as a fault.
+ *
+ * Nothing is claimed that the row does not state. In particular the word
+ * "verified" never appears — that is an admin decision recorded in
+ * `verification_status`, and a meta description is exactly the place a reader
+ * would take it at face value without being able to check.
+ */
+export function projectMetaDescription(
+  project: {
+    name: string;
+    project_type: Enums<'project_type'>;
+    status: Enums<'project_status'>;
+    bedroom_options: number[];
+    locality: string | null;
+    city: string;
+    price_min: number | null;
+    price_max: number | null;
+    total_units: number | null;
+  },
+  builderName: string | null,
+): string {
+  const bhk = [...project.bedroom_options].sort((a, b) => a - b);
+  const config =
+    bhk.length === 0
+      ? PROJECT_TYPE_LABELS[project.project_type]
+      : `${bhk.join(', ')} BHK ${PROJECT_TYPE_LABELS[project.project_type]}`;
+
+  const where = [project.locality, project.city].filter(Boolean).join(', ');
+
+  const price =
+    project.price_min != null && project.price_max != null && project.price_min !== project.price_max
+      ? `${formatPriceShort(project.price_min)} – ${formatPriceShort(project.price_max)}`
+      : project.price_min != null || project.price_max != null
+        ? formatPriceShort((project.price_min ?? project.price_max) as number)
+        : null;
+
+  const lead = `${config} in ${where}${price ? ` from ${price}` : ''}.`;
+
+  const details = [
+    builderName ? `By ${builderName}` : null,
+    PROJECT_STATUS_LABELS[project.status],
+    project.total_units ? `${project.total_units} units` : null,
+  ].filter(Boolean);
+
+  const middle = details.length > 0 ? ` ${details.join('. ')}.` : '';
+  const tail = ` See availability and prices free on ${SITE_NAME}.`;
 
   return clampToWord(`${lead}${middle}${tail}`, 155);
 }

@@ -16,6 +16,8 @@ export const KNOWN_TOP_LEVEL: ReadonlySet<string> = new Set([
   'admin',
   'api',
   'auth',
+  // A builder's public profile, /builders/<slug>.
+  'builders',
   'complete-profile',
   'dashboard',
   'how-it-works',
@@ -25,6 +27,8 @@ export const KNOWN_TOP_LEVEL: ReadonlySet<string> = new Set([
   'privacy',
   'properties',
   'property',
+  // The project browse index and /projects/<slug>.
+  'projects',
   'saved',
   'terms',
   // Root-level files that answer on a path of their own.

@@ -148,32 +148,41 @@ async function main() {
  * Sessions are minted with the admin API rather than by signing in, so this
  * needs no passwords and changes nobody's credentials.
  */
-async function checkContactIsolation() {
-  const ref = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname.split('.')[0];
-  const cookieFor = (session) => {
-    const value = 'base64-' + Buffer.from(JSON.stringify(session), 'utf8').toString('base64url');
-    const name = `sb-${ref}-auth-token`;
-    if (value.length <= 3180) return `${name}=${value}`;
-    const parts = [];
-    for (let i = 0, n = 0; i < value.length; i += 3180, n++) {
-      parts.push(`${name}.${n}=${value.slice(i, i + 3180)}`);
-    }
-    return parts.join('; ');
-  };
+/**
+ * The two session helpers, at module scope so more than one section can reach
+ * them. They were local to `checkContactIsolation` until the project pages
+ * needed the same trick — the alternative was a second copy of the cookie
+ * chunking, which is exactly the sort of thing that drifts.
+ */
+const PROJECT_REF = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname.split('.')[0];
 
-  async function sessionFor(email) {
-    const { data: link, error } = await db.auth.admin.generateLink({ type: 'magiclink', email });
-    if (error) return null;
-    const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
-      auth: { persistSession: false },
-    });
-    const { data, error: verifyError } = await anon.auth.verifyOtp({
-      token_hash: link.properties.hashed_token,
-      type: 'magiclink',
-    });
-    return verifyError ? null : data.session;
+/** Supabase splits an oversized auth cookie across numbered parts; so must we. */
+const cookieFor = (session) => {
+  const value = 'base64-' + Buffer.from(JSON.stringify(session), 'utf8').toString('base64url');
+  const name = `sb-${PROJECT_REF}-auth-token`;
+  if (value.length <= 3180) return `${name}=${value}`;
+  const parts = [];
+  for (let i = 0, n = 0; i < value.length; i += 3180, n++) {
+    parts.push(`${name}.${n}=${value.slice(i, i + 3180)}`);
   }
+  return parts.join('; ');
+};
 
+/** Minted with the admin API, so this needs no password and changes no credentials. */
+async function sessionFor(email) {
+  const { data: link, error } = await db.auth.admin.generateLink({ type: 'magiclink', email });
+  if (error) return null;
+  const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+    auth: { persistSession: false },
+  });
+  const { data, error: verifyError } = await anon.auth.verifyOtp({
+    token_hash: link.properties.hashed_token,
+    type: 'magiclink',
+  });
+  return verifyError ? null : data.session;
+}
+
+async function checkContactIsolation() {
   const { data: unlock } = await db
     .from('contact_unlocks')
     .select('user_id, seller_id, property_id')
@@ -193,6 +202,29 @@ async function checkContactIsolation() {
     .single();
   const secret = String(seller.mobile_number).replace(/\D/g, '').slice(-10);
 
+  /**
+   * The grid has to be asked for a page the listing is actually on.
+   *
+   * `/properties` unqualified was the original target, and it worked right up
+   * until the project had more than one page of inventory — at 38 published
+   * listings and 24 per page, the unlocked listing had simply fallen off page
+   * one and the assertion started failing for a reason that had nothing to do
+   * with contact isolation. A search narrowed to the listing's own title is
+   * stable however much inventory arrives.
+   *
+   * The negative assertions below use the same URL, which matters more: the
+   * question they ask is whether somebody *else* can see the number on a page
+   * that definitely contains the listing. Pointing them at a page the listing
+   * had dropped off made them pass for the wrong reason.
+   */
+  const { data: unlocked } = await db
+    .from('properties')
+    .select('title, city')
+    .eq('id', unlock.property_id)
+    .single();
+  const term = unlocked.title.split(/\s+/).slice(0, 4).join(' ');
+  const gridPath = `/properties?q=${encodeURIComponent(term)}`;
+
   // Everyone who is not the buyer, and can actually sign in.
   const { data: others } = await db
     .from('profiles')
@@ -202,7 +234,7 @@ async function checkContactIsolation() {
   const { data: buyer } = await db.from('profiles').select('email').eq('id', unlock.user_id).single();
   const buyerSession = await sessionFor(buyer.email);
 
-  const pages = ['/dashboard/contacts', '/properties'];
+  const pages = ['/dashboard/contacts', gridPath];
   const shows = (html) => html.includes(secret) || html.includes(secret.replace(/(\d{5})(\d{5})/, '$1 $2'));
 
   if (buyerSession) {
@@ -227,8 +259,10 @@ async function checkContactIsolation() {
     }
   }
 
-  const anon = await (await fetch(BASE + '/properties')).text();
-  check('a signed-out visitor cannot see it on /properties', !shows(anon));
+  // Same narrowed URL as above, for the same reason: a negative assertion
+  // against a page the listing is not even on proves nothing.
+  const anon = await (await fetch(BASE + gridPath)).text();
+  check('a signed-out visitor cannot see it on the grid', !shows(anon));
 }
 
 /**
@@ -269,9 +303,250 @@ async function checkLocationPrivacy() {
   check('a signed-out visitor still gets an area map', html.includes('Around this area'));
 }
 
+/**
+ * §4, §5, §27–§30 — the public builder and project pages, through the front
+ * door.
+ *
+ * Seeds a company, one published project with inventory and one draft, fetches
+ * every page as a visitor would, then deletes the company. The cascade takes
+ * the projects, their units, amenities and any enquiry raised against them, and
+ * it runs in a `finally` so a failed assertion cannot leave fixture inventory
+ * on a live database.
+ *
+ * The view-counter assertion is the reason this belongs here rather than in
+ * `verify-remote.mjs`: that suite would call `record_project_view` and prove
+ * the RPC works, which is precisely how listing view tracking stayed dead for
+ * weeks. This fetches the page and then looks at the column.
+ */
+async function checkProjectPages() {
+  const stamp = process.hrtime.bigint().toString(36);
+  let orgId = null;
+
+  try {
+    const org = await db
+      .from('organizations')
+      .insert({
+        name: `Verify Builders ${stamp}`,
+        org_types: ['builder', 'developer'],
+        city: 'Karur',
+        state: 'Tamil Nadu',
+        about: 'Fixture company created by verify-pages.',
+        established_year: 2011,
+        rera_number: `TN/RERA/${stamp.toUpperCase()}`,
+        phone: '9000000190',
+        email: 'fixture@example.invalid',
+        gst_number: '33AAAAA0000A1Z5',
+      })
+      .select('id, slug, name')
+      .maybeSingle();
+
+    if (org.error) {
+      console.log(`  SKIP  project pages — could not seed a company (${org.error.message})`);
+      return;
+    }
+    orgId = org.data.id;
+
+    const project = await db
+      .from('projects')
+      .insert({
+        organization_id: orgId,
+        name: `Green Valley ${stamp}`,
+        project_type: 'apartment',
+        status: 'under_construction',
+        city: 'Karur',
+        locality: 'Thanthoni',
+        description: 'Fixture project created by verify-pages.',
+        total_units: 120,
+        price_min: 5500000,
+        price_max: 8200000,
+        bedroom_options: [2, 3],
+        construction_progress_percentage: 40,
+        construction_progress_note: 'Tower A slab at the 7th floor.',
+        is_published: true,
+        published_at: new Date().toISOString(),
+      })
+      .select('id, slug, name, views_count')
+      .maybeSingle();
+    if (project.error) throw new Error(`seed project: ${project.error.message}`);
+
+    const draft = await db
+      .from('projects')
+      .insert({
+        organization_id: orgId,
+        name: `Hidden Draft ${stamp}`,
+        project_type: 'plot',
+        city: 'Karur',
+        is_published: false,
+      })
+      .select('slug')
+      .maybeSingle();
+
+    const units = await db
+      .from('project_units')
+      .insert([
+        {
+          project_id: project.data.id, unit_number: 'A-101', unit_type: '2 BHK',
+          property_type: 'apartment', bedrooms: 2, built_up_area: 1150, area_unit: 'sqft',
+          price: 5500000, facing: 'north_east', floor_number: 1, status: 'available',
+        },
+        {
+          project_id: project.data.id, unit_number: 'A-102', unit_type: '3 BHK',
+          property_type: 'apartment', bedrooms: 3, built_up_area: 1480, area_unit: 'sqft',
+          price: 8200000, facing: 'east', floor_number: 1, status: 'sold',
+        },
+      ])
+      .select('id, unit_number, status');
+    if (units.error) throw new Error(`seed units: ${units.error.message}`);
+
+    await db.from('project_amenities').insert({
+      project_id: project.data.id,
+      amenity_name: 'Swimming Pool',
+    });
+
+    const slug = project.data.slug;
+    const orgSlug = org.data.slug;
+    const available = units.data.find((u) => u.status === 'available');
+    const sold = units.data.find((u) => u.status === 'sold');
+
+    const get = async (path, cookie) => {
+      const res = await fetch(`${BASE}${path}`, {
+        headers: { Accept: 'text/html', 'cache-control': 'no-cache', ...(cookie ? { cookie } : {}) },
+        redirect: 'manual',
+      });
+      return { status: res.status, html: await res.text() };
+    };
+
+    // ---- The index -------------------------------------------------------
+    const index = await get('/projects');
+    check('the project index renders', index.status === 200, `status ${index.status}`);
+    check('the index lists a published project', index.html.includes(project.data.name));
+    check('the index hides a draft', !index.html.includes(`Hidden Draft ${stamp}`));
+
+    const filtered = await get('/projects?city=Karur&type=apartment');
+    check('a filtered index asks not to be indexed', /noindex/.test(filtered.html));
+    check('the bare index does not', !/noindex/.test(index.html));
+
+    // ---- The project page ------------------------------------------------
+    const detail = await get(`/projects/${slug}`);
+    check('the project page renders', detail.status === 200, `status ${detail.status}`);
+    check('it credits the builder and links the profile',
+      detail.html.includes(org.data.name) && detail.html.includes(`/builders/${orgSlug}`));
+    check('the unit table lists both units',
+      detail.html.includes('A-101') && detail.html.includes('A-102'));
+    check('only the available unit can be enquired about',
+      detail.html.includes(`unit=${available.id}`) && !detail.html.includes(`unit=${sold.id}`));
+
+    // §8 — the claim has to name who is making it. `40` and `% complete` are
+    // separate text nodes, so React SSR puts a comment marker between them.
+    check('construction progress is attributed to the builder',
+      /40<!-- -->% complete/.test(detail.html) && detail.html.includes('Reported by the builder'));
+    check('construction progress is never presented as ours',
+      !detail.html.includes('Verified by 99Estate'));
+
+    // §4 — none of these columns are in `builder_public_profiles`.
+    const builderPage = await get(`/builders/${orgSlug}`);
+    check('the builder profile renders', builderPage.status === 200, `status ${builderPage.status}`);
+    check('it lists the live project but not the draft',
+      builderPage.html.includes(project.data.name) &&
+        !builderPage.html.includes(`Hidden Draft ${stamp}`));
+    for (const [what, secret] of [
+      ['phone', '9000000190'],
+      ['email', 'fixture@example.invalid'],
+      ['GST number', '33AAAAA0000A1Z5'],
+    ]) {
+      check(`no company ${what} on the public pages`,
+        !builderPage.html.includes(secret) && !detail.html.includes(secret));
+    }
+
+    // ---- Who is offered the form -----------------------------------------
+    check('a signed-out visitor is asked to sign in, not shown the form',
+      detail.html.includes('Sign in to enquire') && !detail.html.includes('name="contact_mobile"'));
+
+    const { data: buyer } = await db
+      .from('profiles')
+      .select('email, mobile_number')
+      .eq('role', 'buyer')
+      .not('mobile_number', 'is', null)
+      .limit(1)
+      .maybeSingle();
+
+    if (buyer?.email) {
+      const session = await sessionFor(buyer.email);
+      if (session) {
+        const signedIn = await get(`/projects/${slug}`, cookieFor(session));
+        check('a signed-in visitor gets the enquiry form',
+          signedIn.html.includes('name="contact_mobile"'),
+          'the form did not render for a session');
+        /**
+         * Rule 8, at the form. The number on their account is not prefilled,
+         * because what reaches the builder must be only what the buyer chose to
+         * type — the profile number is reserved for a settled ₹9 unlock.
+         */
+        const accountNumber = String(buyer.mobile_number).replace(/\D/g, '').slice(-10);
+        check('their account mobile number is not prefilled',
+          !signedIn.html.includes(`value="${accountNumber}"`), accountNumber);
+      } else {
+        console.log('  SKIP  signed-in enquiry form — could not mint a session');
+      }
+    } else {
+      console.log('  SKIP  signed-in enquiry form — no reachable buyer to borrow');
+    }
+
+    // ---- Gone, and how gone ----------------------------------------------
+    // A segment that was never slug-shaped is judged in middleware, which still
+    // owns the status. A well-formed slug with nothing behind it cannot be, so
+    // it falls through to the page after the layout has flushed 200 — a soft
+    // 404 whose `noindex` is what keeps it out of the index.
+    const malformed = await get('/projects/wp-login.php');
+    check('a path that was never a slug is a real 404', malformed.status === 404,
+      `status ${malformed.status}`);
+
+    const missing = await get('/projects/no-such-project-anywhere');
+    check('a well-formed but unknown project is noindexed',
+      missing.html.includes('Project not found') && /noindex/.test(missing.html));
+
+    const hidden = await get(`/projects/${draft.data.slug}`);
+    check('a draft project is not readable by the public',
+      hidden.html.includes('Project not found') && /noindex/.test(hidden.html));
+
+    // ---- The sitemap -----------------------------------------------------
+    const sitemap = await (await fetch(`${BASE}/sitemap.xml`)).text();
+    check('the sitemap advertises the project and the builder',
+      sitemap.includes(`/projects/${slug}`) && sitemap.includes(`/builders/${orgSlug}`));
+    check('the sitemap does not advertise the draft', !sitemap.includes(draft.data.slug));
+
+    // ---- The view counter, through the front door -------------------------
+    const before = await db.from('projects').select('views_count').eq('id', project.data.id).single();
+    await get(`/projects/${slug}`);
+    // `after()` runs once the response has been sent, so give it a moment.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const afterView = await db.from('projects').select('views_count').eq('id', project.data.id).single();
+    check('fetching the project page counts a view',
+      afterView.data.views_count > before.data.views_count,
+      `${before.data.views_count} -> ${afterView.data.views_count}`);
+
+    // ---- Suspension -------------------------------------------------------
+    await db.rpc('admin_verify_organization', {
+      p_organization_id: orgId,
+      p_status: 'suspended',
+      p_notes: 'fixture',
+    });
+    const suspended = await get(`/projects/${slug}`);
+    check('suspending the company takes its project page down',
+      suspended.html.includes('Project not found'), `status ${suspended.status}`);
+  } finally {
+    if (orgId) {
+      const { error } = await db.from('organizations').delete().eq('id', orgId);
+      if (error) console.log(`  CLEANUP FAILED: fixture company ${orgId} — ${error.message}`);
+      else console.log('  (fixture company deleted; its projects and units cascaded)');
+    }
+  }
+}
+
 main()
   .then(() => checkContactIsolation())
   .then(() => checkLocationPrivacy())
+  .then(() => checkProjectPages())
   .then(() => {
     console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} — ${passed} passed, ${failures.length} failed`);
     failures.forEach((f) => console.log(`  - ${f}`));

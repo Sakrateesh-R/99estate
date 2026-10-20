@@ -19,11 +19,19 @@ import { propertyRefFromSlug } from '@/lib/utils';
  *
  *   - a single-segment path that is neither a known route nor a landing slug
  *   - a `/property/...` path with no listing id on the end of it
+ *   - a `/projects/...` or `/builders/...` path whose segment is not even
+ *     shaped like a slug the database could have issued
  *
- * Both are pure string work. What needs the database — a landing slug naming a
- * city we do not cover, or a well-formed id for a listing that does not exist —
- * is left to the page, because a lookup here would tax every request to the
- * pages that matter most.
+ * All of it is pure string work. What needs the database — a landing slug
+ * naming a city we do not cover, a well-formed id for a listing that does not
+ * exist, a well-formed slug for a project that does not — is left to the page,
+ * because a lookup here would tax every request to the pages that matter most.
+ *
+ * So a well-formed-but-missing slug is still a soft 404: 200, with the page's
+ * own `noindex`. That is the same trade-off the listing route already makes,
+ * and the `noindex` is what actually keeps it out of the index. The shape check
+ * is worth having anyway because almost all of this traffic is bots probing
+ * `/projects/wp-login.php`, which never looked like a slug.
  */
 
 // The set itself lives in `route-segments.ts`, which imports nothing so the
@@ -60,7 +68,29 @@ export function isDefinitelyNotFound(pathname: string): boolean {
     return propertyRefFromSlug(second!) === null;
   }
 
+  /**
+   * Projects and builder profiles are addressed by a slug the database issued,
+   * and `organizations_slug_shape_check` / `projects_slug_shape_check` pin that
+   * shape exactly. Anything else cannot be in there, so it cannot resolve.
+   */
+  if (segments.length === 2 && (first === 'projects' || first === 'builders')) {
+    return !isIssuedSlug(second!);
+  }
+
   return false;
+}
+
+/**
+ * The slug shape both `organizations` and `projects` are constrained to.
+ *
+ * Length is capped as well as the pattern: a slug is built from a name of at
+ * most 150 characters plus a deduplication counter, so anything far longer than
+ * that was not issued here either.
+ */
+const ISSUED_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+function isIssuedSlug(segment: string): boolean {
+  return segment.length <= 200 && ISSUED_SLUG.test(segment);
 }
 
 /**
