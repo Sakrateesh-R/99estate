@@ -7,6 +7,11 @@ import { parseVideoUrl } from '@/lib/properties/video';
 import {
   MAX_MEDIA_PER_PROJECT,
   MAX_PROJECT_IMAGE_BYTES,
+  MAX_PROJECT_MEDIA_TITLE,
+  PROJECT_PLAN_TYPES,
+  PROJECT_UPLOAD_TYPES,
+  type ProjectPlanType,
+  type ProjectUploadType,
 } from '@/lib/projects/schema';
 
 /**
@@ -45,6 +50,8 @@ export type ProjectMediaItem = {
   storagePath: string | null;
   sortOrder: number;
   isCover: boolean;
+  /** Only plans use it today; the public page renders it as the plan's caption. */
+  title: string | null;
 };
 
 /**
@@ -85,7 +92,7 @@ export async function listProjectMedia(projectId: string): Promise<ProjectMediaI
   const supabase = await createClient();
   const { data } = await supabase
     .from('project_media')
-    .select('id, type, url, storage_path, sort_order')
+    .select('id, type, url, storage_path, sort_order, title')
     .eq('project_id', projectId)
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true });
@@ -97,6 +104,7 @@ export async function listProjectMedia(projectId: string): Promise<ProjectMediaI
     storagePath: row.storage_path,
     sortOrder: row.sort_order,
     isCover: row.type === 'cover',
+    title: row.title,
   }));
 }
 
@@ -110,10 +118,30 @@ export async function listProjectMedia(projectId: string): Promise<ProjectMediaI
 export async function registerProjectImage(
   projectId: string,
   storagePath: string,
-  meta: { width?: number; height?: number; byteSize?: number } = {},
+  meta: {
+    width?: number;
+    height?: number;
+    byteSize?: number;
+    /** Gallery unless a plan upload says otherwise. */
+    type?: ProjectUploadType;
+    /** "Ground Floor", "2 BHK Type A" — rendered under a plan on the public page. */
+    title?: string;
+  } = {},
 ): Promise<Result<ProjectMediaItem>> {
   const allowed = await requireMarketing(projectId);
   if (!allowed.ok) return fail(allowed.error);
+
+  /**
+   * Checked against the allowlist rather than trusted. This lands in a `type`
+   * column the public page switches on, so an arbitrary value could put an
+   * upload in a section it was never meant for — or, with `cover`, silently
+   * become the image on every project card.
+   */
+  const type: ProjectUploadType = PROJECT_UPLOAD_TYPES.includes(
+    meta.type as ProjectUploadType,
+  )
+    ? (meta.type as ProjectUploadType)
+    : 'gallery';
 
   // The same shape `project_media_storage_path_check` enforces. Checked here
   // too so a mistake reads as a sentence rather than a constraint violation.
@@ -146,15 +174,16 @@ export async function registerProjectImage(
     .from('project_media')
     .insert({
       project_id: projectId,
-      type: 'gallery',
+      type,
       storage_path: storagePath,
       url: publicUrl,
       sort_order: Math.min(count ?? 0, 200),
       width: meta.width ?? null,
       height: meta.height ?? null,
       byte_size: meta.byteSize ?? null,
+      title: meta.title?.trim().slice(0, MAX_PROJECT_MEDIA_TITLE) || null,
     })
-    .select('id, type, url, storage_path, sort_order')
+    .select('id, type, url, storage_path, sort_order, title')
     .single();
 
   if (error) {
@@ -175,8 +204,74 @@ export async function registerProjectImage(
       storagePath: data.storage_path,
       sortOrder: data.sort_order,
       isCover: data.type === 'cover',
+      title: data.title,
     },
   };
+}
+
+/**
+ * Switches a plan between floor plan and master plan.
+ *
+ * `.in('type', PROJECT_PLAN_TYPES)` is the guard that matters: without it a
+ * stale id could retype a gallery photo — or the cover — into the Plans
+ * section, and the cover trigger would then pick a different image for every
+ * project card.
+ */
+export async function setProjectPlanType(
+  projectId: string,
+  mediaId: string,
+  planType: ProjectPlanType,
+): Promise<Result> {
+  const allowed = await requireMarketing(projectId);
+  if (!allowed.ok) return fail(allowed.error);
+
+  if (!PROJECT_PLAN_TYPES.includes(planType)) return fail('That is not a plan type.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('project_media')
+    .update({ type: planType })
+    .eq('id', mediaId)
+    .eq('project_id', projectId)
+    .in('type', PROJECT_PLAN_TYPES)
+    .select('id')
+    .maybeSingle();
+
+  if (error) return fail(error.message);
+  if (!data) return fail('That plan is no longer part of this project.');
+
+  revalidateProject(projectId, allowed.project.slug);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * The caption under a plan — "Ground Floor", "2 BHK Type A".
+ *
+ * Blank clears it. `project_media_title_check` caps the length, so it is
+ * truncated here rather than rejected: a label that is slightly too long is
+ * still the label somebody meant.
+ */
+export async function setProjectMediaTitle(
+  projectId: string,
+  mediaId: string,
+  title: string,
+): Promise<Result> {
+  const allowed = await requireMarketing(projectId);
+  if (!allowed.ok) return fail(allowed.error);
+
+  const trimmed = (title ?? '').trim().slice(0, MAX_PROJECT_MEDIA_TITLE);
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('project_media')
+    .update({ title: trimmed === '' ? null : trimmed })
+    .eq('id', mediaId)
+    .eq('project_id', projectId);
+
+  if (error) return fail(error.message);
+
+  revalidateProject(projectId, allowed.project.slug);
+  return { ok: true, data: undefined };
 }
 
 export async function deleteProjectMedia(projectId: string, mediaId: string): Promise<Result> {

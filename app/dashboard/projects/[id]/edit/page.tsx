@@ -10,11 +10,14 @@ import {
 } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProjectForm } from '@/components/dashboard/project-form';
+import { ProjectAmenities } from '@/components/dashboard/project-amenities';
 import { ProjectMedia } from '@/components/dashboard/project-media';
+import { ProjectPlans } from '@/components/dashboard/project-plans';
 import { ProjectVisibility } from '@/components/dashboard/project-visibility';
 import { requireProfile } from '@/lib/auth/session';
-import { updateProject } from '@/lib/projects/actions';
+import { listProjectAmenities, updateProject } from '@/lib/projects/actions';
 import { listProjectMedia } from '@/lib/projects/media-actions';
+import { getAmenityOptions } from '@/lib/properties/seller-queries';
 import { getMyProject } from '@/lib/projects/queries';
 import { formatCount, formatDate } from '@/lib/format';
 
@@ -40,7 +43,13 @@ export default async function EditProjectPage({
   const project = await getMyProject(id);
   if (!project) notFound();
 
-  const media = await listProjectMedia(project.id);
+  const [media, amenities, amenityOptions] = await Promise.all([
+    listProjectMedia(project.id),
+    listProjectAmenities(project.id),
+    getAmenityOptions(),
+  ]);
+
+  const plans = media.filter((m) => m.type === 'floor_plan' || m.type === 'master_plan');
 
   return (
     <div className="space-y-8">
@@ -154,8 +163,39 @@ export default async function EditProjectPage({
         <CardContent>
           <ProjectMedia
             projectId={project.id}
-            initialMedia={media.filter((m) => m.type !== 'video')}
+            initialMedia={media.filter(
+              (m) => m.type === 'cover' || m.type === 'gallery',
+            )}
             initialVideoUrl={media.find((m) => m.type === 'video')?.url ?? ''}
+            readOnly={!project.canManageMarketing}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Plans</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ProjectPlans
+            projectId={project.id}
+            initialPlans={plans}
+            totalMediaCount={media.length}
+            readOnly={!project.canManageMarketing}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Amenities</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ProjectAmenities
+            projectId={project.id}
+            projectType={project.project_type}
+            options={amenityOptions}
+            initialSelected={amenities}
             readOnly={!project.canManageMarketing}
           />
         </CardContent>
@@ -169,9 +209,9 @@ export default async function EditProjectPage({
         </CardHeader>
         <CardContent>
           <p className="text-sm text-ink-600">
-            Floor plans, the master plan, the brochure, amenities, towers and the unit-by-unit
-            inventory for this project are not built yet. Photos, the video, the project page and
-            the enquiry inbox all work today.
+            The brochure, towers and the unit-by-unit inventory for this project are not built yet.
+            Photos, plans, the video, amenities, the project page and the enquiry inbox all work
+            today.
           </p>
         </CardContent>
       </Card>

@@ -113,6 +113,7 @@ export function ProjectMedia({
             storagePath: null,
             sortOrder: current.length,
             isCover: false,
+            title: null,
             pending: true,
             localUrl,
           },
@@ -395,7 +396,7 @@ export function ProjectMedia({
             return url
               ? [
                   ...withoutVideo,
-                  { id: `video-${url}`, type: 'video', url, storagePath: null, sortOrder: 200, isCover: false },
+                  { id: `video-${url}`, type: 'video', url, storagePath: null, sortOrder: 200, isCover: false, title: null },
                 ]
               : withoutVideo;
           })

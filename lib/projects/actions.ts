@@ -7,7 +7,11 @@ import { createClient } from '@/lib/supabase/server';
 import { getProfile } from '@/lib/auth/session';
 import { getMyMembership } from '@/lib/organizations/queries';
 import { getMyProject } from '@/lib/projects/queries';
-import { projectSchema, type ProjectFieldName } from '@/lib/projects/schema';
+import {
+  projectAmenitiesSchema,
+  projectSchema,
+  type ProjectFieldName,
+} from '@/lib/projects/schema';
 import { ensureProjectWorkspace } from '@/lib/projects/workspace';
 
 export type ProjectFormState = {
@@ -241,6 +245,76 @@ export async function setProjectPublished(formData: FormData): Promise<PublishSt
  * `properties.project_id` is ON DELETE SET NULL, so the listing simply stops
  * being part of a project rather than disappearing with it.
  */
+/**
+ * §10 — what the project comes with.
+ *
+ * The public page has rendered an "Amenities" section from `project_amenities`
+ * since the table shipped; nothing wrote to it. The vocabulary is the shared
+ * `amenities` table, the same one the listing wizard offers, so a clubhouse is
+ * spelled one way across the site and a buyer filtering on it finds both.
+ *
+ * Replace-in-place like `setPropertyAmenities`: delete what was unticked,
+ * insert what is new. `project_amenities_unique` makes a double-insert an
+ * error rather than a duplicate, so the diff is not an optimisation.
+ */
+export async function setProjectAmenities(
+  projectId: string,
+  amenities: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  const existing = await getMyProject(projectId);
+  if (!existing) return { ok: false, error: 'That project could not be found.' };
+  if (!existing.canManageMarketing) {
+    return { ok: false, error: 'You do not have permission to change this project.' };
+  }
+
+  const parsed = projectAmenitiesSchema.safeParse({ amenities });
+  if (!parsed.success) return { ok: false, error: 'Some of those amenities are not valid.' };
+
+  const supabase = await createClient();
+  const wanted = [...new Set(parsed.data.amenities)];
+
+  const { data: current } = await supabase
+    .from('project_amenities')
+    .select('id, amenity_name')
+    .eq('project_id', projectId);
+
+  const rows = current ?? [];
+  const toRemove = rows.filter((r) => !wanted.includes(r.amenity_name)).map((r) => r.id);
+  const currentNames = new Set(rows.map((r) => r.amenity_name));
+  const toAdd = wanted.filter((name) => !currentNames.has(name));
+
+  if (toRemove.length) {
+    const { error } = await supabase.from('project_amenities').delete().in('id', toRemove);
+    if (error) return { ok: false, error: describe(error, 'save') };
+  }
+
+  if (toAdd.length) {
+    const { error } = await supabase
+      .from('project_amenities')
+      .insert(toAdd.map((amenity_name) => ({ project_id: projectId, amenity_name })));
+    if (error) return { ok: false, error: describe(error, 'save') };
+  }
+
+  revalidatePath(`/dashboard/projects/${projectId}/edit`);
+  if (existing.slug) revalidatePath(`/projects/${existing.slug}`);
+  return { ok: true };
+}
+
+/** What a project currently lists, for the editor to start from. */
+export async function listProjectAmenities(projectId: string): Promise<string[]> {
+  const existing = await getMyProject(projectId);
+  if (!existing) return [];
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('project_amenities')
+    .select('amenity_name')
+    .eq('project_id', projectId)
+    .order('amenity_name', { ascending: true });
+
+  return (data ?? []).map((r) => r.amenity_name);
+}
+
 export async function deleteProject(formData: FormData): Promise<{ ok: boolean; error?: string }> {
   const projectId = String(formData.get('project_id') ?? '');
   if (!projectId) return { ok: false, error: 'Something went wrong. Please reload the page.' };

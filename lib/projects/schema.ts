@@ -249,3 +249,38 @@ export const MAX_PROJECT_IMAGE_BYTES = 10 * 1024 * 1024;
  * falls back to the first gallery image by sort order.
  */
 export const PROJECT_GALLERY_TYPES = ['cover', 'gallery'] as const;
+
+/**
+ * The plan types, which the public page already renders as its "Plans"
+ * section — `floor_plan` and `master_plan` together, master first.
+ *
+ * `brochure` is in the database enum and is deliberately not here: nothing
+ * renders it, so offering an upload would store a PDF no buyer can ever reach.
+ * It also cannot go through `optimiseImage`, which is for bitmaps.
+ */
+export const PROJECT_PLAN_TYPES = ['floor_plan', 'master_plan'] as const;
+export type ProjectPlanType = (typeof PROJECT_PLAN_TYPES)[number];
+
+/** Every type this UI is allowed to write, gallery and plans together. */
+export const PROJECT_UPLOAD_TYPES = ['gallery', 'floor_plan', 'master_plan'] as const;
+export type ProjectUploadType = (typeof PROJECT_UPLOAD_TYPES)[number];
+
+/** `project_media_title_check` caps it at 150. */
+export const MAX_PROJECT_MEDIA_TITLE = 150;
+
+export const PROJECT_PLAN_TYPE_LABELS: Record<ProjectPlanType, string> = {
+  floor_plan: 'Floor plan',
+  master_plan: 'Master plan',
+};
+
+/**
+ * §10 — the amenity list for a project.
+ *
+ * Same shape and same limits as `amenitiesSchema` for a listing, because
+ * `project_amenities` is a copy of `property_amenities` down to the name
+ * length check — and the vocabulary behind both is the one shared `amenities`
+ * table, so the two must agree about what a valid name is.
+ */
+export const projectAmenitiesSchema = z.object({
+  amenities: z.array(z.string().trim().min(2).max(60)).max(80),
+});
