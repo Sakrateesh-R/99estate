@@ -56,31 +56,32 @@ export type ImageLoaderArgs = {
 };
 
 /**
- * Hands an image back to Next's built-in optimizer.
+ * Everything that is not a public Supabase object: served at its own URL.
  *
- * Constructing the `/_next/image` URL by hand is the documented way to opt a
- * subset of images out of a custom loader. The widths Next passes in come from
- * `deviceSizes`/`imageSizes`, which is exactly what that route validates
- * against, so nothing here can produce a width it will reject.
+ * This deliberately does NOT hand the image to `/_next/image`, which was the
+ * first attempt and is wrong on Vercel. Configuring `images.loader: 'custom'`
+ * tells the build that Next will not use the optimizer, so Vercel does not
+ * deploy that route at all and every such URL 404s. It works under a local
+ * `next start`, where the route exists regardless — which is exactly how it
+ * passed local verification and still broke the logo in production.
+ *
+ * So the remaining images have to be fine served as-is, and they are: the two
+ * logo assets are sized for their use (see `public/logo*.webp`) and a Google
+ * avatar arrives small already.
  */
-function defaultOptimizer({ src, width, quality }: ImageLoaderArgs): string {
-  const params = new URLSearchParams({
-    url: src,
-    w: String(width),
-    q: String(quality ?? DEFAULT_QUALITY),
-  });
-  return `/_next/image?${params.toString()}`;
+function passThrough(src: string): string {
+  return src;
 }
 
 export default function supabaseImageLoader({ src, width, quality }: ImageLoaderArgs): string {
   if (!PUBLIC_OBJECT_PREFIX || !src.startsWith(PUBLIC_OBJECT_PREFIX)) {
-    return defaultOptimizer({ src, width, quality });
+    return passThrough(src);
   }
 
   const objectPath = src.slice(PUBLIC_OBJECT_PREFIX.length);
 
   // Defensive: a prefix match with nothing after it is not an object.
-  if (objectPath === '') return defaultOptimizer({ src, width, quality });
+  if (objectPath === '') return passThrough(src);
 
   /**
    * `resize=contain` is not optional.

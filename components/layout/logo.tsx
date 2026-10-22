@@ -14,10 +14,19 @@ import { cn } from '@/lib/utils';
  * one of the easier ways to fail Cumulative Layout Shift on every page at once.
  */
 
-/** Natural size of `public/logo.png`, the trimmed lockup. */
-const LOCKUP = { width: 1821, height: 422 };
+/**
+ * Natural size of `public/logo.webp`, the trimmed lockup.
+ *
+ * Sized for its use rather than shipped at source resolution. The custom
+ * image loader (lib/images/supabase-loader.ts) serves local assets as-is,
+ * because Vercel does not deploy /_next/image when a custom loader is
+ * configured — so whatever is in /public is exactly what a visitor downloads.
+ * The lockup renders at h-9/h-10, so 120px tall is 3x for a retina screen and
+ * 30 KB instead of the 494 KB original.
+ */
+const LOCKUP = { width: 518, height: 120 };
 /** Natural size of the square 99 mark. */
-const MARK = { width: 574, height: 574 };
+const MARK = { width: 128, height: 128 };
 
 /**
  * The 99 mark alone.
@@ -28,7 +37,7 @@ const MARK = { width: 574, height: 574 };
 export function LogoMark({ className }: { className?: string }) {
   return (
     <Image
-      src="/logo-mark.png"
+      src="/logo-mark.webp"
       alt=""
       width={MARK.width}
       height={MARK.height}
@@ -60,7 +69,7 @@ export function Logo({
     <Link href={href} className={cn('inline-flex items-center', className)} aria-label="99Estate home">
       {showWordmark ? (
         <Image
-          src="/logo.png"
+          src="/logo.webp"
           alt="99Estate — buy, sell, rent, explore"
           width={LOCKUP.width}
           height={LOCKUP.height}
