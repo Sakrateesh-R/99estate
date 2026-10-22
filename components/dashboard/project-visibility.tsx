@@ -92,7 +92,11 @@ export function ProjectVisibility({ project }: { project: ProjectRow }) {
           )}
         </Button>
 
-        {project.canManageInventory ? (
+        {/* `canManage`, not `canManageInventory`: deleting a project is an
+            owner-or-admin decision, which is what `deleteProject` checks and
+            what `projects_delete_managers` enforces. Gated on the inventory
+            right, this offered a sales manager a button that always refused. */}
+        {project.canManage ? (
           <Button variant="ghost" onClick={() => setConfirmDelete(true)}>
             <Trash2 className="size-4" aria-hidden />
             Delete
@@ -106,30 +110,36 @@ export function ProjectVisibility({ project }: { project: ProjectRow }) {
         </p>
       ) : null}
 
-      <ConfirmDialog
-        open={confirmDelete}
-        onClose={() => setConfirmDelete(false)}
-        onConfirm={remove}
-        loading={pending === 'delete'}
-        destructive
-        title={`Delete ${project.name}?`}
-        confirmLabel="Delete project"
-        /* Spelled out because the cascade is wide and irreversible. The one
-           thing it does *not* take is a listing attached to the project:
-           properties.project_id is ON DELETE SET NULL, so those survive and
-           simply stop being part of a project. */
-        description={
-          <>
-            This also deletes its photos, amenities, buildings, floors, every unit in its inventory,
-            and the {project.leads_count} enquir{project.leads_count === 1 ? 'y' : 'ies'} it has
-            received. This cannot be undone.
-            <br />
-            <br />
-            Any individual listing you attached to this project is kept — it just stops being part
-            of a project.
-          </>
-        }
-      />
+      {/* Gated too, not just the button that opens it. The dialog renders its
+          markup whether or not it is open, so leaving it mounted put a "Delete
+          project" button in the accessibility tree for somebody who has no
+          delete right — invisible and unclickable, but still announced. */}
+      {project.canManage ? (
+        <ConfirmDialog
+          open={confirmDelete}
+          onClose={() => setConfirmDelete(false)}
+          onConfirm={remove}
+          loading={pending === 'delete'}
+          destructive
+          title={`Delete ${project.name}?`}
+          confirmLabel="Delete project"
+          /* Spelled out because the cascade is wide and irreversible. The one
+             thing it does *not* take is a listing attached to the project:
+             properties.project_id is ON DELETE SET NULL, so those survive and
+             simply stop being part of a project. */
+          description={
+            <>
+              This also deletes its photos, amenities, buildings, floors, every unit in its
+              inventory, and the {project.leads_count} enquir
+              {project.leads_count === 1 ? 'y' : 'ies'} it has received. This cannot be undone.
+              <br />
+              <br />
+              Any individual listing you attached to this project is kept — it just stops being
+              part of a project.
+            </>
+          }
+        />
+      ) : null}
     </>
   );
 }

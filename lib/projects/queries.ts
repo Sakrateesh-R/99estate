@@ -8,6 +8,17 @@ export type Project = Tables<'projects'>;
 export type ProjectRow = Project & {
   organizationName: string;
   organizationSlug: string;
+  /**
+   * Owner or admin. Carried because deleting a project is their decision alone
+   * — both `deleteProject` and the `projects_delete_managers` policy say so.
+   *
+   * It was missing here, and the dashboard paid for it: with only the
+   * inventory and marketing rights to hand, the delete button was gated on
+   * `canManageInventory`, which includes a sales manager. They were shown a
+   * Delete button, walked through a confirmation listing every unit and
+   * enquiry it would destroy, and then told they were not allowed.
+   */
+  canManage: boolean;
   canManageMarketing: boolean;
   canManageInventory: boolean;
 };
@@ -17,6 +28,7 @@ function decorate(project: Project, membership: OrganizationMembership): Project
     ...project,
     organizationName: membership.organization.name,
     organizationSlug: membership.organization.slug,
+    canManage: membership.canManage,
     canManageMarketing: membership.canManageMarketing,
     canManageInventory: membership.canManageInventory,
   };

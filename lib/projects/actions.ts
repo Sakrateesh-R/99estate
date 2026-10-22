@@ -235,6 +235,39 @@ export async function deleteProject(formData: FormData): Promise<{ ok: boolean; 
   }
 
   const supabase = await createClient();
+
+  /**
+   * Clear the bucket before the row goes, and in that order for two reasons.
+   *
+   * The obvious one is the same as `deleteProperty`'s: deleting the project
+   * cascades `project_media` away and takes the only record of what is in the
+   * bucket with it.
+   *
+   * The one that actually bites is authorisation. The storage policy
+   * `project_media_delete` defers to `can_manage_project()`, which resolves the
+   * organisation through `project_org_id()` — a lookup on the project row. With
+   * the project already deleted that returns NULL, the check fails, and the
+   * removal is refused. Not loudly: `remove()` reports a per-object failure
+   * that is easy to discard, so the photos simply stay in `project-media`
+   * forever — unreferenced, unreachable and still billed. This was written the
+   * other way round first and that is exactly what happened.
+   *
+   * `storage_path` is NULL for a video row, which is linked rather than hosted,
+   * so those are filtered out instead of sending nulls to `remove()`.
+   */
+  const { data: media } = await supabase
+    .from('project_media')
+    .select('storage_path')
+    .eq('project_id', projectId);
+
+  const paths = (media ?? [])
+    .map((m) => m.storage_path)
+    .filter((path): path is string => Boolean(path));
+
+  if (paths.length) {
+    await supabase.storage.from('project-media').remove(paths);
+  }
+
   const { error } = await supabase.from('projects').delete().eq('id', projectId);
 
   if (error) {
