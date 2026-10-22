@@ -28,10 +28,19 @@ type NavItem = {
 const ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/properties', label: 'My properties', icon: Building2 },
-  { href: '/dashboard/projects', label: 'Projects', icon: LayoutGrid, builderOnly: true },
+  /**
+   * No longer `builderOnly`. The flag hid projects until the account already
+   * acted for a company, which meant the way to start a project was invisible
+   * to everybody who had not yet registered one — and registering one is no
+   * longer part of adding a project.
+   */
+  { href: '/dashboard/projects', label: 'Projects', icon: LayoutGrid },
   { href: '/dashboard/leads', label: 'Enquiries', icon: Inbox, badge: true },
   { href: '/dashboard/contacts', label: 'Unlocked contacts', icon: KeyRound },
   { href: '/dashboard/properties/new', label: 'Add property', icon: Plus, exact: true },
+  /* Beside "Add property" and reading the same way: the two things somebody
+     can put on the site, offered the same way. */
+  { href: '/dashboard/projects/new', label: 'Add project', icon: Plus, exact: true },
   { href: '/dashboard/organization', label: 'My company', icon: Landmark },
   { href: '/dashboard/profile', label: 'Profile', icon: User2, exact: true },
 ];

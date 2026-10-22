@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Building2, ImageIcon, LayoutGrid, Plus, Users } from 'lucide-react';
+import { ImageIcon, LayoutGrid, Plus, Users } from 'lucide-react';
 import {
   Badge,
   EntityVerificationBadge,
@@ -25,19 +25,25 @@ export default async function ProjectsPage() {
 
   const [memberships, projects] = await Promise.all([getMyOrganizations(), getMyProjects()]);
 
-  // No company means no project can exist yet, and the useful next step is
-  // registering one rather than an empty project list.
+  /**
+   * No company is no longer a blocker, so this no longer sends people away to
+   * register one. Adding the first project creates the company record behind
+   * the scenes; the useful next step here is the project itself.
+   */
   if (memberships.length === 0) {
     return (
       <div>
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Projects</h1>
         <div className="mt-8">
           <EmptyState
-            icon={<Building2 className="size-6" />}
-            title="Register a company first"
-            description="Projects belong to a builder or promoter, so there is a company to register before there is a project to add."
+            icon={<LayoutGrid className="size-6" />}
+            title="No projects yet"
+            description="A project is a development you are building and selling — a layout, an apartment block, a villa community. Add the details, then its photos and video."
             action={
-              <ButtonLink href="/dashboard/organization/new">Register your company</ButtonLink>
+              <ButtonLink href="/dashboard/projects/new">
+                <Plus className="size-4" aria-hidden />
+                Add project
+              </ButtonLink>
             }
           />
         </div>

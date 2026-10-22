@@ -8,6 +8,7 @@ import { getProfile } from '@/lib/auth/session';
 import { getMyMembership } from '@/lib/organizations/queries';
 import { getMyProject } from '@/lib/projects/queries';
 import { projectSchema, type ProjectFieldName } from '@/lib/projects/schema';
+import { ensureProjectWorkspace } from '@/lib/projects/workspace';
 
 export type ProjectFormState = {
   ok: boolean;
@@ -99,16 +100,34 @@ export async function createProject(
   const parsed = projectSchema.safeParse(readForm(formData));
   if (!parsed.success) return { ok: false, fieldErrors: collectFieldErrors(parsed.error) };
 
-  const membership = await getMyMembership(parsed.data.organization_id);
-  if (!membership) return { ok: false, error: 'You do not act for that company.' };
-  if (!membership.canManage) {
-    return { ok: false, error: 'Only an owner or admin of the company can create a project.' };
+  /**
+   * Either they named a company or we resolve one for them.
+   *
+   * The named case still goes through the same membership check it always did —
+   * a submitted `organization_id` is attacker-controlled and decides whose
+   * permissions apply. The unnamed case is the ordinary one now: a builder
+   * adding their first project never sees a company field, and
+   * `ensureProjectWorkspace` returns the one they manage or creates it.
+   */
+  let organizationId: string;
+
+  if (parsed.data.organization_id) {
+    const membership = await getMyMembership(parsed.data.organization_id);
+    if (!membership) return { ok: false, error: 'You do not act for that company.' };
+    if (!membership.canManage) {
+      return { ok: false, error: 'Only an owner or admin of the company can create a project.' };
+    }
+    organizationId = membership.organization.id;
+  } else {
+    const workspace = await ensureProjectWorkspace();
+    if (!workspace.ok) return { ok: false, error: workspace.error };
+    organizationId = workspace.organizationId;
   }
 
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('projects')
-    .insert(parsed.data)
+    .insert({ ...parsed.data, organization_id: organizationId })
     .select('id')
     .maybeSingle();
 

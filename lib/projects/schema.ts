@@ -78,7 +78,23 @@ function optionalDate(message: string) {
  * one has an input in the form — should read this instead of the internals.
  */
 export const projectFields = z.object({
-  organization_id: z.string().uuid('Choose which company this project belongs to'),
+  /**
+   * Optional in the form, never optional in the row.
+   *
+   * `projects.organization_id` is NOT NULL and always will be — every project
+   * policy resolves the caller's rights through it. But a builder adding their
+   * first project has no company to choose, and asking them to register one
+   * first was a form in front of a form. So the field is only sent when there
+   * is a genuine choice to make, and `createProject` fills it in otherwise via
+   * `ensureProjectWorkspace()`.
+   *
+   * An empty string becomes undefined rather than failing: that is what an
+   * absent `<select>` submits, and it means "you pick" rather than "invalid".
+   */
+  organization_id: z.preprocess(
+    (v) => (v === '' || v == null ? undefined : v),
+    z.string().uuid('Choose which company this project belongs to').optional(),
+  ),
 
   name: z
     .string()

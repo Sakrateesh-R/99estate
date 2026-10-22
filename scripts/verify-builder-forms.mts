@@ -160,7 +160,36 @@ const minimal = accepts('a project needs a company, a name, a type and a city', 
 check('status defaults to upcoming', minimal?.status === 'upcoming', String(minimal?.status));
 check('site area defaults to acres', minimal?.total_area_unit === 'acre', String(minimal?.total_area_unit));
 
-rejects('a project must belong to a company', projectSchema, { ...MINIMAL_PROJECT, organization_id: '' }, 'organization_id');
+/**
+ * The company is no longer the form's problem.
+ *
+ * A project still cannot exist without one — `projects.organization_id` is NOT
+ * NULL and every project policy resolves rights through it — but a builder
+ * adding their first project is not asked to register a company first, so the
+ * field arrives blank and `createProject` fills it in through
+ * `ensureProjectWorkspace()`. Blank therefore means "you choose", not
+ * "invalid", and this used to assert the opposite.
+ *
+ * Both halves are checked, because only the first one changed: a blank is
+ * waved through, and anything present but malformed is still refused — that is
+ * what stops a tampered field deciding which company's permissions apply.
+ */
+const noCompany = accepts(
+  'a project with no company is accepted, to be resolved server-side',
+  projectSchema,
+  { ...MINIMAL_PROJECT, organization_id: '' },
+);
+check(
+  'a blank company becomes undefined rather than an empty string',
+  noCompany?.organization_id === undefined,
+  String(noCompany?.organization_id),
+);
+rejects(
+  'a company id that is not a uuid is still refused',
+  projectSchema,
+  { ...MINIMAL_PROJECT, organization_id: 'not-a-uuid' },
+  'organization_id',
+);
 rejects('a two-character name is refused', projectSchema, { ...MINIMAL_PROJECT, name: 'GV' }, 'name');
 rejects('a project type outside the enum is refused', projectSchema, { ...MINIMAL_PROJECT, project_type: 'township' }, 'project_type');
 rejects('a city is required', projectSchema, { ...MINIMAL_PROJECT, city: '' }, 'city');

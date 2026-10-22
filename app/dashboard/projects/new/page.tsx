@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
+
 import { ArrowLeft } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ProjectForm } from '@/components/dashboard/project-form';
@@ -20,12 +20,15 @@ export default async function NewProjectPage() {
 
   /**
    * Only owners and admins may create a project (`projects_insert_managers`),
-   * so the picker offers only the companies where that is true. Somebody who is
-   * marketing everywhere gets sent back rather than shown a form whose every
-   * option would be refused.
+   * so the picker offers only the companies where that is true.
+   *
+   * An empty list is no longer a dead end. It used to redirect away, which made
+   * "add a project" mean "go and register a company, then come back" — a form
+   * in front of a form, for a record most builders in this phase do not think
+   * about. The form now renders with no company field at all and
+   * `createProject` resolves one through `ensureProjectWorkspace()`.
    */
   const eligible = memberships.filter((m) => m.canManage);
-  if (eligible.length === 0) redirect('/dashboard/projects');
 
   const companies = eligible.map((m) => ({ id: m.organization.id, name: m.organization.name }));
 
@@ -41,8 +44,8 @@ export default async function NewProjectPage() {
 
       <h1 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">Add a project</h1>
       <p className="mt-1.5 max-w-prose text-[0.9375rem] text-ink-600">
-        Start with the name, what is being built and where. The project is saved as a draft — you
-        decide when it goes live, and you can add photos and inventory first.
+        Start with the name, what is being built and where. The project is saved as a draft and you
+        go straight to adding photos and a video — you decide when it goes live.
       </p>
 
       <Card className="mt-8">
