@@ -10,9 +10,11 @@ import {
 } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProjectForm } from '@/components/dashboard/project-form';
+import { ProjectMedia } from '@/components/dashboard/project-media';
 import { ProjectVisibility } from '@/components/dashboard/project-visibility';
 import { requireProfile } from '@/lib/auth/session';
 import { updateProject } from '@/lib/projects/actions';
+import { listProjectMedia } from '@/lib/projects/media-actions';
 import { getMyProject } from '@/lib/projects/queries';
 import { formatCount, formatDate } from '@/lib/format';
 
@@ -37,6 +39,8 @@ export default async function EditProjectPage({
    */
   const project = await getMyProject(id);
   if (!project) notFound();
+
+  const media = await listProjectMedia(project.id);
 
   return (
     <div className="space-y-8">
@@ -143,16 +147,31 @@ export default async function EditProjectPage({
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Photos &amp; video</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ProjectMedia
+            projectId={project.id}
+            initialMedia={media.filter((m) => m.type !== 'video')}
+            initialVideoUrl={media.find((m) => m.type === 'video')?.url ?? ''}
+            readOnly={!project.canManageMarketing}
+          />
+        </CardContent>
+      </Card>
+
       {/* Stated rather than silently absent, so a builder is not left wondering
-          where the inventory and photo tools are. */}
+          where the remaining tools are. */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Coming next</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-ink-600">
-            Photos, floor plans, amenities, towers and the unit-by-unit inventory for this project
-            are not built yet. The project page and enquiry inbox work today.
+            Floor plans, the master plan, the brochure, amenities, towers and the unit-by-unit
+            inventory for this project are not built yet. Photos, the video, the project page and
+            the enquiry inbox all work today.
           </p>
         </CardContent>
       </Card>

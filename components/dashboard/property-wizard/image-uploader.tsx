@@ -6,6 +6,7 @@ import { GripVertical, ImageUp, Loader2, Star, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
 import { reportClientError } from '@/lib/diagnostics/actions';
+import { optimiseImage } from '@/lib/images/optimise';
 import { createClient } from '@/lib/supabase/client';
 import {
   deletePropertyImage,
@@ -23,108 +24,8 @@ import {
 } from '@/lib/properties/schema';
 
 const BUCKET = 'property-images';
-const MAX_EDGE = 1920;
-const WEBP_QUALITY = 0.82;
 
 type UploadItem = RegisteredImage & { pending?: boolean; localUrl?: string };
-
-/**
- * Downscales and re-encodes a photo to WebP before upload (§13).
- *
- * Phone cameras produce 4–12 MB JPEGs; nothing on this site displays an image
- * wider than ~1900px. Doing this in the browser saves the seller's data, keeps
- * uploads inside the 10 MB bucket limit, and means the CDN serves a sane file.
- *
- * Falling back to the original rather than blocking the upload is still the
- * rule; `optimiseImage` below says why it had to.
- */
-type Optimised = {
-  blob: Blob;
-  width: number;
-  height: number;
-  ext: string;
-  /** Set only when the original is being passed through untouched. */
-  failure?: { reason: string; detail?: string };
-};
-
-/**
- * Edges to try, largest first.
- *
- * `canvas.toBlob` returns null rather than throwing when it cannot produce the
- * image — most often because the canvas is too large for the device. Dropping
- * the target and trying again costs a few milliseconds and rescues exactly that
- * case, which giving up on the first attempt never could.
- */
-const EDGE_ATTEMPTS = [MAX_EDGE, 1280, 1024];
-
-/** WebP first; JPEG exists for browsers whose canvas will not encode WebP. */
-const ENCODINGS = [
-  { type: 'image/webp', ext: 'webp' },
-  { type: 'image/jpeg', ext: 'jpg' },
-] as const;
-
-function encode(canvas: HTMLCanvasElement, type: string): Promise<Blob | null> {
-  return new Promise((resolve) => canvas.toBlob(resolve, type, WEBP_QUALITY));
-}
-
-/**
- * Shrinks and re-encodes a photo in the browser, before it is uploaded.
- *
- * Passing the original through is still the last resort — a seller holding a
- * perfectly good photo must never be blocked because we could not compress it —
- * but it is now genuinely last, and it reports why. The previous version
- * returned the original on any failure without a word, which is how roughly one
- * stored photo in ten ended up uncompressed with nothing to explain it.
- */
-async function optimiseImage(file: File): Promise<Optimised> {
-  const passThrough = (reason: string, detail?: string): Optimised => ({
-    blob: file,
-    width: 0,
-    height: 0,
-    ext: file.name.split('.').pop()?.toLowerCase() ?? 'jpg',
-    failure: { reason, detail },
-  });
-
-  if (typeof createImageBitmap !== 'function') {
-    return passThrough('no-createimagebitmap');
-  }
-
-  let bitmap: ImageBitmap;
-  try {
-    bitmap = await createImageBitmap(file);
-  } catch (cause) {
-    // The likeliest real cause: a format this browser cannot decode, such as
-    // HEIC from an iPhone arriving with a .jpg name.
-    return passThrough('decode-failed', cause instanceof Error ? cause.message : String(cause));
-  }
-
-  try {
-    for (const edge of EDGE_ATTEMPTS) {
-      const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
-      const width = Math.round(bitmap.width * scale);
-      const height = Math.round(bitmap.height * scale);
-
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return passThrough('no-canvas-context');
-      ctx.drawImage(bitmap, 0, 0, width, height);
-
-      for (const { type, ext } of ENCODINGS) {
-        const blob = await encode(canvas, type);
-        // Some browsers ignore an unsupported type and silently hand back PNG,
-        // which is larger than the original and worse than not bothering.
-        if (blob && blob.type === type) return { blob, width, height, ext };
-      }
-    }
-
-    return passThrough('encode-failed', `${bitmap.width}x${bitmap.height}`);
-  } finally {
-    bitmap.close();
-  }
-}
 
 export function ImageUploader({
   propertyId,

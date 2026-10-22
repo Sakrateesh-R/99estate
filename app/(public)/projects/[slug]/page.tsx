@@ -27,6 +27,7 @@ import { ButtonLink } from '@/components/ui/button';
 import { getProjectDetail, prepareProjectViewTracking } from '@/lib/projects/public';
 import { getAuthContext } from '@/lib/auth/session';
 import { areaEmbedUrl, mapsLinkFor, parseMapUrl, pointEmbedUrl } from '@/lib/properties/map-link';
+import { parseVideoUrl, VIDEO_PROVIDER_LABELS } from '@/lib/properties/video';
 import { formatCount, formatDate } from '@/lib/format';
 import {
   AREA_UNIT_LABELS,
@@ -111,6 +112,17 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
 
   const gallery = media.filter((m) => m.type === 'cover' || m.type === 'gallery');
   const floorPlans = media.filter((m) => m.type === 'floor_plan' || m.type === 'master_plan');
+
+  /**
+   * Parsed rather than trusted, exactly as the listing page does it.
+   *
+   * It matters more here: `project_media.url` carries no provider allowlist of
+   * its own — only `length` and `^https?://` — so unlike `properties.video_url`
+   * there is no CHECK constraint standing behind this. The parser is what keeps
+   * an arbitrary URL out of an iframe on a page carrying our name, and it
+   * returns null for anything it cannot read.
+   */
+  const video = parseVideoUrl(media.find((m) => m.type === 'video')?.url ?? null);
   const brochure = media.find((m) => m.type === 'brochure');
   /**
    * The exact pin, unlike a listing.
@@ -371,6 +383,32 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
                     </li>
                   ))}
                 </ul>
+              </Section>
+            ) : null}
+
+            {video ? (
+              <Section title="Video walkthrough">
+                <div className="aspect-video overflow-hidden rounded-lg bg-ink-950">
+                  {/* `loading="lazy"` is doing real work: an eager iframe would
+                      have the buyer's browser talking to YouTube on every
+                      project open, whether or not they scroll this far or press
+                      play. With the nocookie host and Vimeo's dnt=1, watching
+                      is a thing the buyer chooses rather than one that happens
+                      to them. */}
+                  <iframe
+                    src={video.embedUrl}
+                    title={`Video walkthrough of ${project.name}`}
+                    className="size-full"
+                    loading="lazy"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    referrerPolicy="strict-origin-when-cross-origin"
+                  />
+                </div>
+                <p className="mt-2.5 text-xs text-ink-500">
+                  Hosted on {VIDEO_PROVIDER_LABELS[video.provider]}, not on 99Estate. Playing it
+                  shares your viewing with them.
+                </p>
               </Section>
             ) : null}
 

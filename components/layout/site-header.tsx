@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { Plus, Sparkles } from 'lucide-react';
 import { Logo } from '@/components/layout/logo';
 import { MobileNav, type NavLink } from '@/components/layout/mobile-nav';
+import { NavBrowseMenu } from '@/components/layout/nav-browse-menu';
 import {
   HeaderAccountFallback,
   HeaderAccountMenu,
@@ -13,6 +14,11 @@ import {
 import { ButtonLink } from '@/components/ui/button';
 import { FREE_DAILY_UNLOCKS, PAID_UNLOCK_PRICE } from '@/lib/constants';
 
+/**
+ * The whole nav, flat. Still the single source of truth for the mobile sheet,
+ * which has room to list everything and should not hide anything behind a
+ * second tap.
+ */
 const PRIMARY_LINKS: NavLink[] = [
   { href: '/properties?listing=sale', label: 'Buy' },
   { href: '/properties?listing=rent', label: 'Rent' },
@@ -28,6 +34,21 @@ const PRIMARY_LINKS: NavLink[] = [
   { href: '/projects', label: 'New projects' },
   { href: '/properties', label: 'All properties' },
 ];
+
+/**
+ * What the desktop row shows at the top level — the three journeys people
+ * actually arrive with. The rest folds into "Browse" beside them.
+ *
+ * Derived from PRIMARY_LINKS by href rather than retyped, so the two can never
+ * drift into disagreeing about a label or a query string.
+ */
+const TOP_LEVEL_HREFS = ['/properties?listing=sale', '/properties?listing=rent', '/projects'];
+
+const DESKTOP_TOP_LEVEL = TOP_LEVEL_HREFS.flatMap(
+  (href) => PRIMARY_LINKS.filter((link) => link.href === href),
+);
+
+const DESKTOP_BROWSE = PRIMARY_LINKS.filter((link) => !TOP_LEVEL_HREFS.includes(link.href));
 
 const SECONDARY_LINKS: NavLink[] = [
   { href: '/dashboard', label: 'Seller dashboard' },
@@ -74,7 +95,7 @@ export function SiteHeader() {
         <Logo priority />
 
         <nav className="ml-3 hidden items-center gap-0.5 lg:flex" aria-label="Primary">
-          {PRIMARY_LINKS.map((link) => (
+          {DESKTOP_TOP_LEVEL.map((link) => (
             <Link
               key={link.href}
               href={link.href}
@@ -83,6 +104,7 @@ export function SiteHeader() {
               {link.label}
             </Link>
           ))}
+          <NavBrowseMenu label="Browse" links={DESKTOP_BROWSE} />
         </nav>
 
         <div className="ml-auto flex items-center gap-2">

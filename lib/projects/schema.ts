@@ -193,3 +193,43 @@ export const projectSchema = projectFields
 export type ProjectInput = z.input<typeof projectSchema>;
 export type ProjectValues = z.output<typeof projectSchema>;
 export type ProjectFieldName = keyof ProjectValues;
+
+// ---------------------------------------------------------------------------
+// Project media (§9)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirrors `project_media_enforce_limit()`, whose own limit comes from
+ * `setting_int('max_media_per_project', 40)`.
+ *
+ * Duplicated here for the same reason the property limits are: the database is
+ * the authority, but a row rejected there arrives as an opaque 23514 and the
+ * uploader needs to say "you already have 40" before spending a builder's
+ * bandwidth on the 41st.
+ */
+export const MAX_MEDIA_PER_PROJECT = 40;
+
+/** Matches the `project-media` bucket's `allowed_mime_types`, minus the PDF. */
+export const PROJECT_IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+] as const;
+
+/** The bucket's `file_size_limit`. */
+export const MAX_PROJECT_IMAGE_BYTES = 10 * 1024 * 1024;
+
+/**
+ * The media types this UI writes.
+ *
+ * The enum in the database is wider — `floor_plan`, `master_plan`, `brochure`,
+ * `construction_update` all exist and are read by the public page — but
+ * nothing writes them yet, so listing them here would imply a tool that is not
+ * built.
+ *
+ * `cover` is not a separate upload: it is a gallery row promoted, because
+ * `project_media_sync_cover_url()` picks the cover by `type = 'cover'` and
+ * falls back to the first gallery image by sort order.
+ */
+export const PROJECT_GALLERY_TYPES = ['cover', 'gallery'] as const;

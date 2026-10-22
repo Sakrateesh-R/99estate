@@ -33,6 +33,15 @@ import {
  *      forward as hidden inputs. Without that, searching from the header
  *      would silently wipe a carefully built filter set.
  */
+/**
+ * The browse pages, where a persistent search belongs.
+ *
+ * Detail pages (`/property/...`, `/projects/<slug>`) are deliberately out: the
+ * reader is looking at one place, and both carry their own ways back to a
+ * search. The nav links and the mobile sheet reach search from anywhere.
+ */
+const SEARCH_ROW_PATHS = new Set(['/properties', '/projects']);
+
 export function HeaderSearch({
   cities,
   places = [],
@@ -67,8 +76,20 @@ export function HeaderSearch({
     return [...searchParams.entries()].filter(([key]) => !owned.has(key));
   }, [searchParams]);
 
-  // The hero already carries a larger version of this control.
-  if (pathname === '/') return null;
+  /**
+   * Shown only where somebody is actually browsing results.
+   *
+   * This used to render everywhere except the home page, which meant a
+   * five-field property search sat above the seller dashboard, the admin
+   * screens, a listing's own page and the Terms — a third row of chrome on
+   * pages where nobody is searching, and the main reason the header felt
+   * cramped. An allowlist rather than a growing list of exclusions: a new
+   * dashboard route should not have to remember to opt out of the search bar.
+   *
+   * The home page is absent because its hero carries a larger version of the
+   * same control, which was always the original reason for the exclusion.
+   */
+  if (!SEARCH_ROW_PATHS.has(pathname)) return null;
 
   const budgets = listing === 'rent' || listing === 'pg' ? RENT_BUDGETS : SALE_BUDGETS;
 
