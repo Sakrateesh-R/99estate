@@ -23,6 +23,21 @@ const nextConfig: NextConfig = {
   // bloats (or breaks) the standalone trace.
   outputFileTracingRoot: process.cwd(),
   images: {
+    /**
+     * §13 — Supabase resizes its own objects; see lib/images/supabase-loader.ts.
+     *
+     * A custom loader replaces URL generation for *every* image, which is why
+     * the loader hands anything that is not a public Supabase object back to
+     * `/_next/image`. The logo assets and Google avatars therefore behave
+     * exactly as before.
+     *
+     * `formats` is deliberately kept: it still applies to everything the
+     * built-in optimizer handles. Supabase does its own negotiation and
+     * returns WebP when the browser's `Accept` header offers it — verified
+     * against this project, not assumed.
+     */
+    loader: 'custom',
+    loaderFile: './lib/images/supabase-loader.ts',
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [
       // Google account avatars returned by Supabase Auth.
