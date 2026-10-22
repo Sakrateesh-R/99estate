@@ -12,6 +12,8 @@ import {
   amenitiesSchema,
   MIN_IMAGES_FOR_SUBMISSION,
   photoRequirementLabel,
+  SOLD_VIA_OPTIONS,
+  type SoldVia,
 } from '@/lib/properties/schema';
 import type { Enums } from '@/types/database.types';
 
@@ -287,17 +289,6 @@ export async function publishProperty(
 // ---------------------------------------------------------------------------
 
 /** Seller-driven status changes: pause, resume, mark sold/rented (§18). */
-/**
- * Where the buyer or tenant actually came from (§18).
- *
- * Asked only when a listing closes, because that is the one moment the seller
- * knows and is willing to say. `not_said` is a real answer rather than an
- * absence — it records that we asked and they declined, which is different from
- * never having asked.
- */
-export const SOLD_VIA_OPTIONS = ['99estate', 'other_platform', 'offline', 'not_said'] as const;
-export type SoldVia = (typeof SOLD_VIA_OPTIONS)[number];
-
 export async function updatePropertyStatus(
   propertyId: string,
   status: Extract<Enums<'property_status'>, 'published' | 'paused' | 'sold' | 'rented' | 'pending'>,

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog } from '@/components/ui/dialog';
-import { SOLD_VIA_OPTIONS, type SoldVia } from '@/lib/properties/actions';
+import type { SoldVia } from '@/lib/properties/schema';
 
 /**
  * §18 — asks where the buyer came from, at the moment of marking a listing
@@ -135,5 +135,3 @@ export function MarkSoldDialog({
     </Dialog>
   );
 }
-
-export { SOLD_VIA_OPTIONS };

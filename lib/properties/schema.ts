@@ -268,6 +268,23 @@ export const amenitiesSchema = z.object({
 });
 
 /**
+ * Where the buyer or tenant actually came from (§18).
+ *
+ * Asked only when a listing closes, because that is the one moment the seller
+ * knows and is willing to say. `not_said` is a real answer rather than an
+ * absence — it records that we asked and they declined, which is different from
+ * never having asked.
+ *
+ * Lives here, not beside `updatePropertyStatus` which is its only consumer: a
+ * `'use server'` module may export nothing but async functions, and Next
+ * validates *every* export of such a file on the first action call. A single
+ * array exported from `actions.ts` therefore 500s every action in it —
+ * `savePropertyDraft` included, which is step 3 of the posting wizard.
+ */
+export const SOLD_VIA_OPTIONS = ['99estate', 'other_platform', 'offline', 'not_said'] as const;
+export type SoldVia = (typeof SOLD_VIA_OPTIONS)[number];
+
+/**
  * Minimum photo count for a submission.
  *
  * One, not three. Three was the better listing — a flat with one photo converts
