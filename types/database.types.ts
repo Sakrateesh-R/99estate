@@ -86,9 +86,16 @@ export type Database = {
           user_agent: string | null;
           created_at: string;
         };
-        /** Reported by the browser; RLS requires user_id = auth.uid(). */
+        /**
+         * Two writers. The browser reports its own failure and RLS requires
+         * `user_id = auth.uid()`; the `onRequestError` hook records a
+         * server-side one through the service role, where there may be no
+         * session to attribute it to — hence nullable, as the column has
+         * always been. RLS, not this type, is what holds the browser to its
+         * own id.
+         */
         Insert: {
-          user_id: string;
+          user_id: string | null;
           kind: "image_compression" | "image_upload" | "payment" | "unexpected";
           message: string;
           context?: Json;

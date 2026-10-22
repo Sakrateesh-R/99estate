@@ -39,7 +39,7 @@ export default async function AdminErrorsPage({ searchParams }: PageProps) {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Error log</h1>
           <p className="mt-1.5 text-[0.9375rem] text-ink-600">
-            Failures reported from people&rsquo;s browsers. Kept for 30 days.
+            Failures from people&rsquo;s browsers and from the server. Kept for 30 days.
           </p>
         </div>
       </div>
