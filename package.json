@@ -11,7 +11,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run lint && npm run verify:video && npm run verify:map && npm run verify:urls && npm run verify:routes && npm run verify:builder",
+    "check": "npm run typecheck && npm run lint && npm run verify:video && npm run verify:map && npm run verify:urls && npm run verify:routes && npm run verify:builder && npm run verify:search",
     "verify:video": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-video-urls.mts",
     "verify:routes": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-routes.mts",
     "db:push": "supabase db push",
@@ -25,6 +25,7 @@
     "db:purge-demo": "node --env-file=.env.local scripts/purge-demo.mjs",
     "verify:map": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-map-links.mts",
     "verify:urls": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-property-urls.mts",
+    "verify:search": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-search-indexing.mts",
     "verify:builder": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/with-alias.mjs scripts/verify-builder-forms.mts"
   },
   "dependencies": {

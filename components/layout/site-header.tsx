@@ -8,7 +8,6 @@ import {
   HeaderAccountFallback,
   HeaderAccountMenu,
   HeaderQuickLinks,
-  HeaderSearchSlot,
   MobileAuthSlot,
 } from '@/components/layout/header-slots';
 import { ButtonLink } from '@/components/ui/button';
@@ -72,8 +71,22 @@ const SECONDARY_LINKS: NavLink[] = [
  * second — which made every route's `loading.tsx` useless, because a loading
  * fallback needs a shell to appear inside. The markup below flushes immediately
  * and each piece of data arrives in its own Suspense boundary.
+ *
+ * `searchSlot` is passed in rather than rendered here, because the header
+ * cannot know the route and the search row belongs to only two of them.
+ * Rendering it unconditionally meant `HeaderSearchSlot` read the whole
+ * published set twice — once for cities, once for places — on every page that
+ * carries this header: the dashboard, the admin console, /terms, a listing
+ * page. The client component then returned null and threw all of it away.
+ * Measured on the built app at four `properties` queries per render of a page
+ * with no search box on it.
+ *
+ * The `(public)` layout fills this from a `@search` parallel route, so the
+ * fetch happens on /properties and /projects and nowhere else. Every other
+ * caller — the dashboard and admin shells, not-found, /notifications — passes
+ * nothing and pays nothing.
  */
-export function SiteHeader() {
+export function SiteHeader({ searchSlot }: { searchSlot?: React.ReactNode } = {}) {
   return (
     <header className="sticky top-0 z-50 border-b border-ink-200 bg-white">
       {/* USP strip — the pricing model, stated before anything else. */}
@@ -138,14 +151,8 @@ export function SiteHeader() {
         </div>
       </div>
 
-      {/* ---- Tier 2: persistent search. Renders nothing on the home page,
-           where the hero carries a larger version of the same control.
-           useSearchParams needs a Suspense boundary or the whole tree opts
-           into client-side rendering — and the city list streams into the same
-           boundary rather than blocking the shell above. ---- */}
-      <Suspense fallback={null}>
-        <HeaderSearchSlot />
-      </Suspense>
+      {/* ---- Tier 2: the persistent search, supplied by whoever needs it ---- */}
+      {searchSlot}
     </header>
   );
 }

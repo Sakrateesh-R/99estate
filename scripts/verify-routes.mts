@@ -24,13 +24,20 @@ const isGroup = (name: string) => name.startsWith('(') && name.endsWith(')');
 const isDynamic = (name: string) => name.startsWith('[');
 /** `_components` and friends are private folders, not routes. */
 const isPrivate = (name: string) => name.startsWith('_') || name.startsWith('.');
+/**
+ * `@search` — a parallel route slot. It fills a named hole in a layout and is
+ * never a URL of its own, so `/@search` is correctly a 404 and must not be
+ * added to KNOWN_TOP_LEVEL. Its children are not first segments either: they
+ * mirror routes that already exist beside it.
+ */
+const isSlot = (name: string) => name.startsWith('@');
 
 function topLevelSegments(dir: string): Set<string> {
   const found = new Set<string>();
 
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    if (isPrivate(entry.name) || isDynamic(entry.name)) continue;
+    if (isPrivate(entry.name) || isDynamic(entry.name) || isSlot(entry.name)) continue;
 
     if (isGroup(entry.name)) {
       // A group's children are themselves first segments.

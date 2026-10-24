@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { ChevronDown, MapPin, Search, SlidersHorizontal } from 'lucide-react';
 import { cn, entriesOf, stripEmptyFields } from '@/lib/utils';
 import { KeywordField } from '@/components/property/keyword-field';
@@ -32,16 +32,22 @@ import {
  *      facing, parking, verified, seller type, sort, view — are carried
  *      forward as hidden inputs. Without that, searching from the header
  *      would silently wipe a carefully built filter set.
- */
-/**
- * The browse pages, where a persistent search belongs.
  *
- * Detail pages (`/property/...`, `/projects/<slug>`) are deliberately out: the
- * reader is looking at one place, and both carry their own ways back to a
- * search. The nav links and the mobile sheet reach search from anywhere.
+ * Where the row appears is a routing question, not a rendering one. This file
+ * used to hold an allowlist of paths and return null for anything else — a
+ * check that ran after the server had already fetched the city and place lists
+ * for every page carrying the header. The decision now lives in
+ * `app/(public)/@search`: a `page.tsx` under that slot renders the row, and its
+ * `default.tsx` renders nothing.
+ *
+ * No path check remains here, deliberately. A second gate would veto the slot
+ * silently — adding `@search/<route>/page.tsx` would fetch the data, render
+ * this component and still show nothing, with the reason three files away.
+ *
+ * Detail pages (`/property/...`, `/projects/<slug>`) and the home page stay out
+ * by simply having no slot — the first two carry their own ways back to a
+ * search, and the home page's hero is a larger version of this control.
  */
-const SEARCH_ROW_PATHS = new Set(['/properties', '/projects']);
-
 export function HeaderSearch({
   cities,
   places = [],
@@ -49,11 +55,10 @@ export function HeaderSearch({
   cities: { city: string; state: string }[];
   places?: string[];
 }) {
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [expanded, setExpanded] = React.useState(false);
 
-  // Read current values before the early return so hook order stays stable.
+  // Defaults for every field, per note 1 above.
   const currentListing = searchParams.get('listing') ?? '';
   const currentCity = searchParams.get('city') ?? '';
   const currentMaxPrice = searchParams.get('max_price') ?? '';
@@ -75,21 +80,6 @@ export function HeaderSearch({
     const owned = new Set<string>(SEARCH_FORM_PARAMS);
     return [...searchParams.entries()].filter(([key]) => !owned.has(key));
   }, [searchParams]);
-
-  /**
-   * Shown only where somebody is actually browsing results.
-   *
-   * This used to render everywhere except the home page, which meant a
-   * five-field property search sat above the seller dashboard, the admin
-   * screens, a listing's own page and the Terms — a third row of chrome on
-   * pages where nobody is searching, and the main reason the header felt
-   * cramped. An allowlist rather than a growing list of exclusions: a new
-   * dashboard route should not have to remember to opt out of the search bar.
-   *
-   * The home page is absent because its hero carries a larger version of the
-   * same control, which was always the original reason for the exclusion.
-   */
-  if (!SEARCH_ROW_PATHS.has(pathname)) return null;
 
   const budgets = listing === 'rent' || listing === 'pg' ? RENT_BUDGETS : SALE_BUDGETS;
 

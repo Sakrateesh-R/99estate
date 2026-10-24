@@ -160,3 +160,38 @@ export function activeFilterCount(filters: PropertyFilters): number {
   if (filters.postedWithinDays !== null) n++;
   return n;
 }
+
+/**
+ * §23 — is this URL the one version of the search worth indexing?
+ *
+ * Page one of the unfiltered list, in the default order, is a real page.
+ * Every other URL this route can produce shows a subset or a reordering of
+ * the same listings at a different address, and its canonical already points
+ * back at `/properties` — so indexing it competes with the page it disclaims.
+ *
+ * Lives here rather than inline in the route because the rule has to agree
+ * with `activeFilterCount` above, and because a predicate this consequential
+ * for crawling should be testable on its own. An earlier version checked only
+ * `q` and `locality`, which quietly let every type, price, BHK and sort
+ * permutation declare itself indexable.
+ *
+ * The three conditions beyond the filter count are the ones
+ * `activeFilterCount` deliberately leaves out — it counts filters for a UI
+ * badge, and these are not filters:
+ *
+ *   sort         same listings, different order
+ *   featuredOnly a subset, reachable from the unfiltered page anyway
+ *   view         list vs grid; identical results, presentation only
+ *
+ * Pagination is unchanged: page two and beyond stay out of the index, and the
+ * route still returns `follow`, so a crawler walks through to the listings.
+ */
+export function isIndexableSearch(filters: PropertyFilters): boolean {
+  return (
+    filters.page === 1 &&
+    activeFilterCount(filters) === 0 &&
+    filters.sort === 'relevance' &&
+    !filters.featuredOnly &&
+    filters.view === 'list'
+  );
+}

@@ -12,6 +12,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { getActiveCities, getCardMeta } from '@/lib/properties/queries';
 import {
   activeFilterCount,
+  isIndexableSearch,
   buildSearchParams,
   parseFilters,
   type PropertyFilters,
@@ -55,9 +56,17 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
     ? landingPath({ city: filters.city, listing: filters.listing ?? 'sale' })
     : '/properties';
 
-  // Page one of the unfiltered list is the only version of this route worth
-  // indexing; every filter permutation is a near-duplicate of it.
-  const isCanonical = filters.page === 1 && !filters.q && !filters.locality;
+  /**
+   * Page one of the unfiltered list is the only version of this route worth
+   * indexing; every filter permutation is a near-duplicate of it.
+   *
+   * The rule itself is `isIndexableSearch`, beside the filters it has to agree
+   * with. It used to be spelled out here as `page === 1 && !q && !locality`,
+   * which let every type, price, BHK and sort permutation declare itself
+   * indexable while its canonical pointed back at plain `/properties` —
+   * eleven of those URLs are linked from the nav and footer alone.
+   */
+  const isCanonical = isIndexableSearch(filters);
 
   return {
     title: `${what}${mode ? ` to ${mode.trim()}` : ''}${where}`,

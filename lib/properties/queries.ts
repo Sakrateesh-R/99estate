@@ -1,5 +1,22 @@
+import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import type { Enums, Tables } from '@/types/database.types';
+
+/**
+ * A note on `cache()` below.
+ *
+ * `getActiveCities` and `getSearchPlaces` both read the whole published set to
+ * tally cities and localities, and both were running twice per request — the
+ * header's Suspense boundary renders more than once and nothing deduplicated
+ * them. Measured on the built app: a page as plain as /terms issued four
+ * `properties` queries, two of each.
+ *
+ * `cache()` is React's per-request memo, the same one `lib/auth/session.ts`
+ * uses for `getUser`/`getProfile`. It lives and dies with the request, so two
+ * visitors never share a result and a new listing is visible on the very next
+ * request — this is deduplication, not caching, and carries none of the
+ * staleness a time-based cache would.
+ */
 
 /**
  * Columns a property card needs — and nothing more.
@@ -260,7 +277,7 @@ export async function getBrowseCategories(): Promise<BrowseCategory[]> {
  * Ordered by how many listings each place has, so the busiest areas come first,
  * and capped — this feeds a `<datalist>`, which ships in the HTML.
  */
-export async function getSearchPlaces(limit = 60): Promise<string[]> {
+export const getSearchPlaces = cache(async (limit = 60): Promise<string[]> => {
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -285,7 +302,7 @@ export async function getSearchPlaces(limit = 60): Promise<string[]> {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
     .map(([place]) => place);
-}
+});
 
 /**
  * Cities offered by the search's location picker.
@@ -305,7 +322,7 @@ export async function getSearchPlaces(limit = 60): Promise<string[]> {
  * Deduplicated case-insensitively because "coimbatore" and "Coimbatore" are one
  * city typed by two sellers — the most common spelling wins.
  */
-export async function getActiveCities(limit = 60): Promise<{ city: string; state: string }[]> {
+export const getActiveCities = cache(async (limit = 60): Promise<{ city: string; state: string }[]> => {
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -336,4 +353,4 @@ export async function getActiveCities(limit = 60): Promise<{ city: string; state
       city: [...entry.spellings.entries()].sort((a, b) => b[1] - a[1])[0]![0],
       state: entry.state,
     }));
-}
+});
