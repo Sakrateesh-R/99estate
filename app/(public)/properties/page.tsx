@@ -11,14 +11,15 @@ import { ButtonLink } from '@/components/ui/button';
 import { Pagination } from '@/components/ui/pagination';
 import { getActiveCities, getCardMeta } from '@/lib/properties/queries';
 import {
-  activeFilterCount,
-  isIndexableSearch,
   buildSearchParams,
   parseFilters,
   type PropertyFilters,
   type SearchParamsInput,
 } from '@/lib/properties/filters';
-import { landingPath } from '@/lib/seo/landing';
+import { slugify } from '@/lib/seo/landing';
+import { resolvePlace } from '@/lib/seo/places';
+import { landingInventory, landingIsWorthIndexing } from '@/lib/seo/inventory';
+import { searchCanonical } from '@/lib/seo/search-canonical';
 import { searchProperties } from '@/lib/properties/search';
 import { LISTING_TYPE_LABELS, PROPERTY_TYPE_LABELS, PAGE_SIZE } from '@/lib/constants';
 
@@ -37,42 +38,33 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
   const where = filters.city ? ` in ${filters.city}` : ' across India';
 
   /**
-   * A city search has a landing page that says the same thing at a URL built
-   * to rank, so this points there rather than competing with it. Without that
-   * the two addresses split the signal for every city we cover.
+   * The canonical and the robots directive are one decision, made in
+   * `lib/seo/search-canonical.ts`.
    *
-   * Only the plain city (+ intent) case maps cleanly — once a budget or a BHK
-   * filter is applied there is no landing page for it, and the unfiltered
-   * search is the honest canonical.
-   */
-  const mapsToLanding =
-    Boolean(filters.city) &&
-    !filters.q &&
-    !filters.locality &&
-    filters.types.length === 0 &&
-    activeFilterCount(filters) === (filters.listing ? 2 : 1);
-
-  const canonical = mapsToLanding
-    ? landingPath({ city: filters.city, listing: filters.listing ?? 'sale' })
-    : '/properties';
-
-  /**
-   * Page one of the unfiltered list is the only version of this route worth
-   * indexing; every filter permutation is a near-duplicate of it.
+   * They were two, and they contradicted each other: a city search emitted
+   * `noindex` *and* a canonical pointing at the landing page, so the canonical
+   * never got to consolidate anything. Worse, the landing target was computed
+   * from the raw `?city=` string — never resolved, never checked for inventory
+   * — so it could point at a 404 or at a page that itself says `noindex`.
    *
-   * The rule itself is `isIndexableSearch`, beside the filters it has to agree
-   * with. It used to be spelled out here as `page === 1 && !q && !locality`,
-   * which let every type, price, BHK and sort permutation declare itself
-   * indexable while its canonical pointed back at plain `/properties` —
-   * eleven of those URLs are linked from the nav and footer alone.
+   * Only read the catalog when there is a city to resolve. The unfiltered
+   * `/properties` is the hot path and has nothing to look up; both helpers are
+   * request-cached, so a city search shares its reads with the page body.
    */
-  const isCanonical = isIndexableSearch(filters);
+  const [place, inventory] = filters.city
+    ? await Promise.all([resolvePlace(slugify(filters.city)), landingInventory()])
+    : [null, null];
+
+  const { canonical, indexable } = searchCanonical(filters, {
+    place,
+    isWorthIndexing: (input) => (inventory ? landingIsWorthIndexing(inventory, input) : false),
+  });
 
   return {
     title: `${what}${mode ? ` to ${mode.trim()}` : ''}${where}`,
     description: `Browse ${what.toLowerCase()}${where} on 99Estate. Full details free, 2 seller contacts free every day, ₹9 after that.`,
     alternates: { canonical },
-    robots: isCanonical && !mapsToLanding ? undefined : { index: false, follow: true },
+    robots: indexable ? undefined : { index: false, follow: true },
   };
 }
 

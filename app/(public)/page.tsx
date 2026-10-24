@@ -34,6 +34,7 @@ import {
   getPopularLocations,
 } from '@/lib/properties/queries';
 import { FREE_DAILY_UNLOCKS, PAID_UNLOCK_PRICE, SITE_NAME } from '@/lib/constants';
+import { landingPath } from '@/lib/seo/landing';
 import type { Metadata } from 'next';
 
 /**
@@ -322,6 +323,20 @@ function BrowseByType({
 
 /* ----------------------------------------------------- Popular locations */
 
+/**
+ * These link to the city landing pages, not to `/properties?city=…`.
+ *
+ * The search URL is not indexable — it is one of thousands of filter
+ * permutations and says so — while the landing page is the indexable surface
+ * for exactly this intent and is the one in the sitemap. Pointing the home
+ * page's internal links at the search URL spent the strongest page on the site
+ * on a destination that disclaims itself, and left the landing pages with no
+ * internal links at all.
+ *
+ * Sale is the intent assumed here, as it was in the query string these
+ * replaced: it is the dominant one, and a visitor after a rental has the
+ * listing-type control in the hero above.
+ */
 function PopularLocations({
   locations,
 }: {
@@ -338,7 +353,7 @@ function PopularLocations({
         {locations.map((location) => (
           <Link
             key={`${location.state}-${location.city}`}
-            href={`/properties?city=${encodeURIComponent(location.city)}`}
+            href={landingPath({ city: location.city, listing: 'sale' })}
             className="group flex items-center justify-between gap-2 rounded-card border border-ink-200 bg-white px-4 py-3.5 transition-colors hover:border-brand-300 hover:bg-brand-50/40"
           >
             <span className="min-w-0">
